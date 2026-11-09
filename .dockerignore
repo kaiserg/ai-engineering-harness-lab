@@ -1,0 +1,19 @@
+# Contexto de build por lista permitida: ningún secreto, historial o entorno del host.
+**
+!Dockerfile
+!pyproject.toml
+!uv.lock
+!harness/
+!harness/**
+!frontend/
+!frontend/**
+!services/
+!services/jenkins-mcp/
+!services/jenkins-mcp/**
+**/__pycache__/
+**/*.pyc
+**/.env*
+**/*.sqlite3*
+**/.git/
+
+**/*.pem

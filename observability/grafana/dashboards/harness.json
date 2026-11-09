@@ -1,0 +1,650 @@
+{
+  "uid": "harness-overview",
+  "title": "Harness Lab · Operación",
+  "tags": [
+    "harness",
+    "lab"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "version": 3,
+  "refresh": "5s",
+  "editable": false,
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Servicios scrapeables · esperado 4",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "harness-prometheus"
+      },
+      "description": "up indica que Prometheus pudo leer métricas, no éxito del negocio.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(up{job=\"harness\"})",
+          "legendFormat": "Servicios",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "harness-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sin muestras"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Cola durable y leases",
+      "type": "stat",
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 12,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "harness-prometheus"
+      },
+      "description": "Snapshot de PostgreSQL. Un run pausado conserva status RUNNING; su job es PAUSED.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(harness_jobs_state{status=\"PENDING\"})",
+          "legendFormat": "Pendientes",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "harness-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum(harness_jobs_state{status=\"PAUSED\"})",
+          "legendFormat": "Pausados",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "harness-prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "sum(harness_jobs_state{status=\"RUNNING\"})",
+          "legendFormat": "En ejecución",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "harness-prometheus"
+          }
+        },
+        {
+          "refId": "D",
+          "expr": "sum(harness_jobs_expired_lease)",
+          "legendFormat": "Lease vencido",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "harness-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sin muestras"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Snapshot PostgreSQL válido",
+      "type": "stat",
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "harness-prometheus"
+      },
+      "description": "1 válido, 0 error. Ausencia de muestra no equivale a cola vacía.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "harness_state_collection_success{role=\"api\"}",
+          "legendFormat": "Snapshot",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "harness-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "Sin muestras",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Vigencia TLS activa",
+      "type": "stat",
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "harness-prometheus"
+      },
+      "description": "Certificado realmente servido; se actualiza al renovar en vivo. Umbral de renovación: 7 días.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "harness_certificate_not_after_seconds - time()",
+          "legendFormat": "{{role}}",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "harness-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dtdurations",
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "Sin muestras",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 86400
+              },
+              {
+                "color": "green",
+                "value": 604800
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Runs actuales por estado",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "harness-prometheus"
+      },
+      "description": "Gauges durables de todos los runs del alcance del laboratorio, no contadores de intentos.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(status)(harness_runs_state)",
+          "legendFormat": "{{status}}",
+          "instant": false,
+          "range": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "harness-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sin muestras"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Actividad reciente · intentos y recuperaciones",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "harness-prometheus"
+      },
+      "description": "Contadores del proceso. increase maneja reinicios y puede producir valores fraccionarios por extrapolación. Recuperación es un claim posterior, no otra finalización del run.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(outcome)(increase(harness_attempts_total[$__rate_interval]))",
+          "legendFormat": "{{outcome}}",
+          "instant": false,
+          "range": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "harness-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum(increase(harness_recovery_attempts_total[$__rate_interval]))",
+          "legendFormat": "intentos de recuperación",
+          "instant": false,
+          "range": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "harness-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sin muestras"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Latencia p95 · intento, modelo y tools",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "harness-prometheus"
+      },
+      "description": "Estimación por buckets. Excluye ventanas que cruzan un inicio de proceso; durante la transición muestra Sin muestras. Requiere tráfico y scrapes posteriores. Modelo guionado.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by(le)((rate(harness_attempt_duration_seconds_bucket[$__rate_interval]) and on(job,instance) (time() - harness_process_start_time_seconds > $__rate_interval))))",
+          "legendFormat": "Intento worker",
+          "instant": false,
+          "range": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "harness-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by(le)((rate(harness_operation_duration_seconds_bucket{operation=\"model\"}[$__rate_interval]) and on(job,instance) (time() - harness_process_start_time_seconds > $__rate_interval))))",
+          "legendFormat": "Modelo",
+          "instant": false,
+          "range": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "harness-prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.95, sum by(le,tool)((rate(harness_operation_duration_seconds_bucket{operation=\"tool\"}[$__rate_interval]) and on(job,instance) (time() - harness_process_start_time_seconds > $__rate_interval))))",
+          "legendFormat": "{{tool}}",
+          "instant": false,
+          "range": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "harness-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sin muestras"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Rechazos de autenticación · 401/403",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "harness-prometheus"
+      },
+      "description": "Endpoint del emisor/MCP. No cuenta como fallo auth una denegación de recurso dentro de HTTP 200.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(role,status)(increase(harness_auth_rejections_total[$__rate_interval]))",
+          "legendFormat": "{{role}} HTTP {{status}}",
+          "instant": false,
+          "range": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "harness-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Sin muestras"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Prometheus · alertas operativas",
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 12,
+        "h": 7
+      },
+      "description": "Pending espera el for; firing persistió. Cero significa ninguna alerta activa del laboratorio.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "harness-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(ALERTS{lab=\"harness\",alertstate=\"firing\"}) or vector(0)",
+          "legendFormat": "Firing",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "harness-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum(ALERTS{lab=\"harness\",alertstate=\"pending\"}) or vector(0)",
+          "legendFormat": "Pending",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "harness-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 10,
+      "type": "alertlist",
+      "title": "Grafana · estado de la cola",
+      "gridPos": {
+        "x": 12,
+        "y": 21,
+        "w": 12,
+        "h": 7
+      },
+      "description": "Regla Grafana-managed. NoData/Error son visibles, no se convierten en estado saludable.",
+      "targets": [],
+      "options": {
+        "viewMode": "list",
+        "groupMode": "default",
+        "maxItems": 10,
+        "sortOrder": 1,
+        "dashboardAlerts": false,
+        "alertName": "Cola pendiente del harness",
+        "stateFilter": {
+          "firing": true,
+          "pending": true,
+          "normal": true,
+          "noData": true,
+          "error": true,
+          "recovering": true
+        }
+      }
+    }
+  ],
+  "templating": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "Consola del harness",
+      "url": "http://127.0.0.1:8002",
+      "targetBlank": true
+    },
+    {
+      "title": "Jaeger · investigar un run",
+      "url": "http://127.0.0.1:16686",
+      "targetBlank": true
+    },
+    {
+      "title": "Prometheus · reglas",
+      "url": "http://127.0.0.1:9090/alerts",
+      "targetBlank": true
+    },
+    {
+      "title": "Alertmanager local",
+      "url": "http://127.0.0.1:9093",
+      "targetBlank": true
+    },
+    {
+      "title": "Grafana · alertas",
+      "url": "http://127.0.0.1:3003/alerting/list",
+      "targetBlank": true
+    }
+  ]
+}

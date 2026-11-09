@@ -1,0 +1,21 @@
+[project]
+name = "ai-engineering-harness-lab"
+version = "0.1.0"
+description = "Educational enterprise harness built from its core"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.162.2",
+    "httpx2>=2.16,<3",
+    "mcp>=2.3.0,<3",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.2,<2",
+    "opentelemetry-sdk>=1.45.2,<2",
+    "prometheus-client>=0.24,<1",
+    "psycopg[binary]>=3.3,<4",
+    "pyjwt[crypto]>=2.15,<3",
+    "uvicorn>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+]

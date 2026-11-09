@@ -1,0 +1,220 @@
+{
+  "rule_files": [
+    "alerts.yml"
+  ],
+  "evaluation_interval": "10s",
+  "tests": [
+    {
+      "name": "outage pending firing resolved",
+      "interval": "10s",
+      "input_series": [
+        {
+          "series": "up{job=\"harness\",role=\"worker\",instance=\"worker:9100\"}",
+          "values": "0 0 0 0 1 1"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(ALERTS{alertname=\"HarnessExporterUnavailable\",alertstate=\"firing\"}) or vector(0)",
+          "eval_time": "20s",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "expr": "count(ALERTS{alertname=\"HarnessExporterUnavailable\",alertstate=\"firing\"}) or vector(0)",
+          "eval_time": "30s",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "expr": "count(ALERTS{alertname=\"HarnessExporterUnavailable\",alertstate=\"firing\"}) or vector(0)",
+          "eval_time": "40s",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "brief blip",
+      "interval": "10s",
+      "input_series": [
+        {
+          "series": "up{job=\"harness\",role=\"worker\",instance=\"worker:9100\"}",
+          "values": "1 0 0 1 1"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(ALERTS{alertname=\"HarnessExporterUnavailable\",alertstate=\"firing\"}) or vector(0)",
+          "eval_time": "40s",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "snapshot failure",
+      "interval": "10s",
+      "input_series": [
+        {
+          "series": "up{job=\"harness\",role=\"api\",instance=\"api:9100\"}",
+          "values": "1+0x6"
+        },
+        {
+          "series": "harness_state_collection_success{job=\"harness\",role=\"api\",instance=\"api:9100\"}",
+          "values": "0+0x6"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(ALERTS{alertname=\"HarnessStateUnavailable\",alertstate=\"firing\"}) or vector(0)",
+          "eval_time": "20s",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "expr": "count(ALERTS{alertname=\"HarnessStateUnavailable\",alertstate=\"firing\"}) or vector(0)",
+          "eval_time": "30s",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "missing snapshot while exporter up",
+      "interval": "10s",
+      "input_series": [
+        {
+          "series": "up{job=\"harness\",role=\"api\",instance=\"api:9100\"}",
+          "values": "1+0x6"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(ALERTS{alertname=\"HarnessStateUnavailable\",alertstate=\"firing\"}) or vector(0)",
+          "eval_time": "30s",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "API down suppresses snapshot alarm",
+      "interval": "10s",
+      "input_series": [
+        {
+          "series": "up{job=\"harness\",role=\"api\",instance=\"api:9100\"}",
+          "values": "0+0x6"
+        },
+        {
+          "series": "harness_state_collection_success{job=\"harness\",role=\"api\",instance=\"api:9100\"}",
+          "values": "0+0x6"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(ALERTS{alertname=\"HarnessStateUnavailable\",alertstate=\"firing\"}) or vector(0)",
+          "eval_time": "30s",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "expr": "count(ALERTS{alertname=\"HarnessExporterUnavailable\",alertstate=\"firing\"}) or vector(0)",
+          "eval_time": "30s",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "certificate near expiry",
+      "interval": "10s",
+      "input_series": [
+        {
+          "series": "harness_certificate_not_after_seconds{job=\"harness\",role=\"jira\",instance=\"jira-mcp:9100\"}",
+          "values": "600000+0x40"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(ALERTS{alertname=\"HarnessCertificateExpiring\",alertstate=\"firing\"}) or vector(0)",
+          "eval_time": "290s",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "expr": "count(ALERTS{alertname=\"HarnessCertificateExpiring\",alertstate=\"firing\"}) or vector(0)",
+          "eval_time": "300s",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "certificate safely valid",
+      "interval": "10s",
+      "input_series": [
+        {
+          "series": "harness_certificate_not_after_seconds{job=\"harness\",role=\"jira\",instance=\"jira-mcp:9100\"}",
+          "values": "2600000+0x40"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(ALERTS{alertname=\"HarnessCertificateExpiring\",alertstate=\"firing\"}) or vector(0)",
+          "eval_time": "300s",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

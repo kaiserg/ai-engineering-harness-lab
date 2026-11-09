@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light"><title>Harness Lab · Consola</title>
+  <link rel="icon" href="/assets/favicon.svg">
+  <link rel="stylesheet" href="/assets/styles.css"><script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="Harness Lab, inicio"><span class="brand-mark">h<span>·</span></span><span>Harness Lab<small>ENGINEERING WORKSPACE</small></span></a>
+    <div class="space-label"><span class="live-dot"></span> Laboratorio local <span class="version">M3b</span></div>
+    <div class="nav-title">EXPLORAR</div>
+    <div class="nav-item selected"><span>◈</span> Consola de ejecuciones</div>
+    <div class="nav-item muted"><span>◇</span> Conocimiento <small>Después</small></div>
+    <div class="nav-item muted"><span>▱</span> Aprobaciones <small>Después</small></div>
+    <div class="recent-heading"><div class="nav-title">EJECUCIONES RECIENTES</div><button id="refresh" class="icon-button" aria-label="Actualizar ejecuciones">↻</button></div>
+    <div id="recent-runs" class="recent-runs"><p class="sidebar-empty">Todavía no hay ejecuciones.</p></div>
+    <div class="sidebar-footer"><div class="avatar">D</div><div>Identidad de desarrollo<small>Lector · workspace de prueba</small></div><span class="live-dot"></span></div>
+  </aside>
+  <main>
+    <header class="topbar"><div>Workspace <span>/</span> <strong>Consola</strong></div><span class="environment" id="environment"><span class="live-dot"></span> Entorno local</span></header>
+    <div class="page">
+      <section class="intro"><div><div class="eyebrow">AGENT OPERATIONS / LAB 02</div><h1>De la evidencia<br>a la decisión<span>.</span></h1><p>Seguí el recorrido de Jira a Jenkins.<br>Observá qué sabemos, qué falta y qué permite el sistema.</p></div><div class="intro-note"><span class="note-symbol">↗</span><span>Un core. Tres herramientas.<br><strong>Cada decisión, con evidencia.</strong></span></div></section>
+      <section class="summary-grid" aria-label="Resumen de ejecuciones recientes"><article class="summary-card"><div class="summary-label">Ejecuciones <span>↗</span></div><div id="total-count" class="summary-number">0</div><small>Últimas 30 guardadas</small></article><article class="summary-card"><div class="summary-label">Revisión verificada <span class="green">✓</span></div><div id="verified-count" class="summary-number">0</div><small>Build y PR de la misma revisión</small></article><article class="summary-card"><div class="summary-label">Para revisar <span class="amber">◉</span></div><div id="review-count" class="summary-number">0</div><small>Evidencia incompleta, distinta o error</small></article></section>
+      <div id="message" class="message" role="alert" hidden></div>
+      <section class="workspace-grid">
+        <section class="card launch-card"><div class="section-kicker">01 / CONFIGURAR</div><h2>Una nueva ejecución</h2><p class="card-description">Elegí un escenario para recorrer el harness.</p>
+          <form id="run-form"><label for="scenario">Escenario</label><select id="scenario" name="scenario"><option value="matching">Evidencia coincidente</option></select><p id="scenario-description" class="field-help">El build pasó para la revisión del PR.</p>
+          <label for="pause">Pausa didáctica <span class="optional">Opcional</span></label><select id="pause" name="pause"><option value="none">Completar el recorrido</option><option value="jira">Después de Jira</option><option value="github">Después de GitHub</option><option value="jenkins">Después de Jenkins</option><option value="failure">Después del fallo de Jenkins</option></select><p class="field-help">Guardá un checkpoint y recuperá el run desde esta pantalla.</p>
+          <div class="integrations"><span>RECORRIDO DE LECTURA</span><div><b>J</b> Jira <i>→</i><b>G</b> GitHub <i>→</i><b>Jk</b> Jenkins</div></div>
+          <button id="start" class="primary-button" type="submit">Iniciar ejecución <span>↗</span></button></form>
+          <div class="safe-note"><span>◇</span><p>Datos y modelo simulados.<br>Las consultas no ejecutan cambios externos.</p></div>
+        </section>
+        <section class="card detail-card"><div class="detail-heading"><div><div class="section-kicker">02 / OBSERVAR</div><h2>Detalle de la ejecución</h2></div><span id="run-status" class="badge neutral">Sin selección</span></div>
+          <div id="empty-state" class="empty-state"><div class="empty-orbit">◈</div><h3>El recorrido empieza acá</h3><p>Iniciá una ejecución o elegí una del historial.<br>Los resultados y sus referencias aparecerán en este espacio.</p><div class="empty-route"><span>Jira</span><i>→</i><span>GitHub</span><i>→</i><span>Jenkins</span></div></div>
+          <div id="run-detail" hidden>
+            <div class="run-meta"><code id="run-id"></code><span id="run-date"></span></div>
+            <div class="run-metrics"><div><span>TIEMPO ACTIVO</span><strong id="active-time">—</strong></div><div><span>DECISIONES DEL MODELO</span><strong id="model-count">—</strong></div><div><span>INTENTOS DE HERRAMIENTA</span><strong id="tool-count">—</strong></div></div>
+            <div class="journey-label"><h3>Recorrido de evidencia</h3><span>Secuencial</span></div><div id="tool-journey" class="tool-journey"></div>
+            <div id="assessment" class="assessment" hidden><div><span class="assessment-label">EVALUACIÓN</span><strong id="assessment-title"></strong></div><p id="assessment-revisions"></p></div>
+            <div id="error-detail" class="inline-error" hidden></div>
+            <div id="answer-section" class="answer-section" hidden><h3>Lectura del resultado</h3><p id="answer"></p></div>
+            <div id="budget" class="budget"></div><p id="worker-info" class="field-help" hidden></p>
+            <div id="resume-section" class="resume-section" hidden><div><strong>Checkpoint guardado</strong><p>Continuá con la evidencia confirmada y los límites originales.</p></div><button id="resume" class="secondary-button">Recuperar run <span>↗</span></button></div>
+            <div class="evidence-header"><h3>Evidencia y referencias</h3><span>Contenido externo · solo datos</span></div><div id="evidence-list"></div>
+          </div>
+        </section>
+      </section>
+      <footer class="page-footer"><span><span class="live-dot"></span> Tres herramientas · consultas de lectura por MCP</span><span>Laboratorio educativo · M3a / M3b</span></footer>
+    </div>
+  </main>
+</body>
+</html>

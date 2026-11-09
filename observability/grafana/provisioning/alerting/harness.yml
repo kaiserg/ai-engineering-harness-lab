@@ -1,0 +1,136 @@
+{
+  "apiVersion": 1,
+  "groups": [
+    {
+      "orgId": 1,
+      "name": "harness-queue",
+      "folder": "Harness Lab",
+      "interval": "10s",
+      "rules": [
+        {
+          "uid": "harness-queue-pending",
+          "title": "Cola pendiente del harness",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": {
+                "from": 120,
+                "to": 0
+              },
+              "datasourceUid": "harness-prometheus",
+              "model": {
+                "refId": "A",
+                "expr": "sum(harness_jobs_state{job=\"harness\",role=\"api\",status=\"PENDING\"})",
+                "instant": true,
+                "range": false,
+                "intervalMs": 10000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "B",
+                "type": "reduce",
+                "expression": "A",
+                "reducer": "last",
+                "settings": {},
+                "intervalMs": 10000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "C",
+                "type": "threshold",
+                "expression": "B",
+                "intervalMs": 10000,
+                "maxDataPoints": 43200,
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        0
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ]
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "30s",
+          "isPaused": false,
+          "annotations": {
+            "summary": "Hay trabajo pendiente sostenido durante 30 segundos",
+            "description": "Revisar worker, cola y snapshot. Una pausa intencional PAUSED no dispara esta regla.",
+            "runbook_url": "http://127.0.0.1:3003/d/harness-overview",
+            "__dashboardUid__": "harness-overview",
+            "__panelId__": "2"
+          },
+          "labels": {
+            "severity": "warning",
+            "lab": "harness",
+            "source": "grafana"
+          }
+        }
+      ]
+    }
+  ],
+  "contactPoints": [
+    {
+      "orgId": 1,
+      "name": "lab-alertmanager",
+      "receivers": [
+        {
+          "uid": "harness-alertmanager-contact",
+          "type": "prometheus-alertmanager",
+          "settings": {
+            "url": "http://alertmanager:9093"
+          },
+          "disableResolveMessage": false
+        }
+      ]
+    }
+  ],
+  "policies": [
+    {
+      "orgId": 1,
+      "receiver": "lab-alertmanager",
+      "group_by": [
+        "grafana_folder",
+        "alertname"
+      ],
+      "group_wait": "5s",
+      "group_interval": "10s",
+      "repeat_interval": "4h"
+    }
+  ]
+}

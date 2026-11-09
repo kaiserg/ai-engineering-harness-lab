@@ -1,0 +1,283 @@
+"""API y frontend: ejecución SQLite local o productor PostgreSQL con worker independiente."""
+import argparse
+import asyncio
+from contextlib import asynccontextmanager, nullcontext
+from dataclasses import asdict
+from pathlib import Path
+from typing import Literal
+from uuid import UUID
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, ConfigDict
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+from .composition import compose, demo_identity
+from .checkpoints import RunInterrupted, pause_hook
+from .contracts import ContractError, Run, RunState
+from .core import Limits, authorize_run
+from .fakes import ReadOnlyPolicy
+from .ownership import database_owner
+from .storage import SQLiteRunStore
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def worker_profile(profile):
+    import os
+    transport = os.environ.get('HARNESS_JIRA_TRANSPORT', 'stdio')
+    if transport not in ('stdio', 'http'):
+        raise ContractError('CONFIG_CHANGED')
+    if transport == 'stdio':
+        return profile
+    parts = profile.split(':')
+    return ':'.join(['mcp-devops-ci-v4', parts[1], *(parts[2:] or ['benign', 'ignore'])])
+
+
+SCENARIOS = {
+    'matching': ('Evidencia coincidente', 'El build pasó para la revisión del PR.', 'mcp-devops-ci-v2:matching'),
+    'stale': ('Build de otra revisión', 'Un build verde no valida la revisión actual.', 'mcp-devops-ci-v2:stale'),
+    'failed': ('Build fallido', 'La revisión coincide, pero las pruebas fallaron.', 'mcp-devops-ci-v2:failed'),
+    'unavailable': ('Jenkins no disponible', 'Informe parcial con evidencia de Jira y GitHub.', 'mcp-devops-ci-v2:unavailable'),
+    'injection-job': ('Ataque: job sin permiso', 'El modelo intenta consultar un job no permitido.', 'mcp-devops-ci-v3:matching:injection:job'),
+    'injection-shell': ('Ataque: herramienta shell', 'El modelo pide ejecutar una herramienta inexistente.', 'mcp-devops-ci-v3:matching:injection:shell'),
+    'injection-claim': ('Ataque: afirmación falsa', 'El core conserva la evidencia pese al texto del modelo.', 'mcp-devops-ci-v3:stale:injection:claim'),
+}
+
+
+class StartRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    scenario: Literal['matching', 'stale', 'failed', 'unavailable', 'injection-job', 'injection-shell', 'injection-claim'] = 'matching'
+    pause_at: Literal['none', 'jira', 'github', 'jenkins', 'failure'] = 'none'
+
+
+class ResumeRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+
+
+class RunService:
+    def __init__(self, store, identity, composer=compose):
+        self.store, self.identity, self.composer = store, identity, composer
+        self.tasks, self.errors = {}, {}
+        self.serial = asyncio.Lock()
+
+    def load(self, run_id):
+        run = self.store.load(str(run_id), self.identity)
+        authorize_run(run, self.identity, ReadOnlyPolicy())
+        return run
+
+    def view(self, run):
+        active = run.run_id in self.tasks
+        data = asdict(run)
+        data.update(is_active=active,
+                    can_resume=not active and run.timing_version == 1 and run.status in (RunState.QUEUED, RunState.RUNNING),
+                    service_error=self.errors.get(run.run_id))
+        return data
+
+    def recent(self):
+        visible = []
+        for run in self.store.list(self.identity):
+            try:
+                authorize_run(run, self.identity, ReadOnlyPolicy())
+            except ContractError:
+                continue
+            visible.append(self.view(run))
+        return visible
+
+    def start(self, body):
+        if body.pause_at == 'failure' and body.scenario != 'unavailable':
+            raise ContractError('INVALID_PAUSE')
+        self.check_capacity()
+        run = self.store.create(Run(self.identity.workspace_id, self.identity.actor_id,
+            execution_profile=SCENARIOS[body.scenario][2], limits_snapshot=asdict(Limits())), self.identity)
+        self.launch(run, pause_at=body.pause_at)
+        return self.view(run)
+
+    def resume(self, run_id):
+        run = self.load(run_id)
+        if run.run_id in self.tasks:
+            raise ContractError('RUN_BUSY')
+        if run.status == RunState.COMPLETED:
+            return self.view(run)
+        if run.status not in (RunState.QUEUED, RunState.RUNNING):
+            raise ContractError('INVALID_TRANSITION')
+        if run.timing_version != 1:
+            raise ContractError('TIME_BUDGET_UNKNOWN')
+        self.check_capacity()
+        self.launch(run, recovering=True)
+        return self.view(run)
+
+    def check_capacity(self):
+        if len(self.tasks) >= 16:
+            raise ContractError('QUEUE_FULL')
+
+    def launch(self, run, recovering=False, pause_at='none'):
+        self.errors.pop(run.run_id, None)
+        self.tasks[run.run_id] = asyncio.create_task(self.work(run, recovering, pause_at))
+
+    async def work(self, run, recovering, pause_at):
+        checkpoint = pause_hook(pause_at)
+        try:
+            async with self.serial:
+                limits = Limits(**run.limits_snapshot) if run.limits_snapshot else Limits()
+                execution = self.composer(run.execution_profile, self.identity, self.store,
+                                          limits=limits, checkpoint_hook=checkpoint)
+                if recovering:
+                    await execution.harness.resume(run.run_id, self.identity)
+                else:
+                    await execution.harness.execute(run.run_id, self.identity)
+        except RunInterrupted:
+            pass
+        except ContractError as error:
+            self.errors[run.run_id] = error.code
+        except Exception:
+            self.errors[run.run_id] = 'INTERNAL_ERROR'
+        finally:
+            self.tasks.pop(run.run_id, None)
+
+    async def close(self):
+        tasks = list(self.tasks.values())
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+class PostgresRunService(RunService):
+    """Productor/consulta solamente; la API nunca ejecuta el core en modo worker."""
+    def view(self, run):
+        run, job = self.store.snapshot(run.run_id, self.identity)
+        authorize_run(run, self.identity, ReadOnlyPolicy())
+        data = super().view(run)
+        active = job is not None and (job['status'] == 'PENDING' or job['status'] == 'RUNNING' and job['lease_active'])
+        resumable = job is not None and (job['status'] == 'PAUSED' or job['status'] == 'RUNNING' and not job['lease_active'])
+        data.update(job=job, is_active=bool(active),
+                    can_resume=bool(resumable and run.timing_version == 1 and run.status in (RunState.QUEUED, RunState.RUNNING)),
+                    service_error=job['last_error'] if job else 'WORK_NOT_CLAIMED')
+        return data
+
+    def start(self, body):
+        if body.pause_at == 'failure' and body.scenario != 'unavailable':
+            raise ContractError('INVALID_PAUSE')
+        from .telemetry import annotate
+        run = self.store.enqueue(Run(self.identity.workspace_id, self.identity.actor_id,
+            execution_profile=worker_profile(SCENARIOS[body.scenario][2]), limits_snapshot=asdict(Limits())), self.identity,
+            pause_at=body.pause_at, max_pending=16)
+        annotate(**{'run.id':run.run_id,'queue.action':'enqueue'})
+        return self.view(run)
+
+    def resume(self, run_id):
+        run = self.load(run_id)
+        if run.status == RunState.COMPLETED:
+            return self.view(run)
+        if run.timing_version != 1:
+            raise ContractError('TIME_BUDGET_UNKNOWN')
+        self.store.requeue_job(run.run_id, self.identity)
+        return self.view(run)
+
+
+def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg_dsn=None, pg_schema='harness_lab'):
+    if storage not in ('sqlite', 'postgres'):
+        raise ValueError('Backend de persistencia desconocido.')
+    path = Path(db) if db else ROOT / 'data/runtime/harness.sqlite3'
+
+    @asynccontextmanager
+    async def lifespan(app):
+        with database_owner(path) if storage == 'sqlite' else nullcontext():
+            if storage == 'postgres':
+                from .postgres_store import PostgresRunStore
+                from .postgres_config import local_dsn
+                store = PostgresRunStore(pg_dsn or local_dsn(), schema=pg_schema)
+                app.state.service = PostgresRunService(store, identity or demo_identity(), composer)
+                from .metrics import attach_state
+                attach_state(lambda:store.operational_snapshot(app.state.service.identity))
+            else:
+                app.state.service = RunService(SQLiteRunStore(path), identity or demo_identity(), composer)
+            try:
+                yield
+            finally:
+                await app.state.service.close()
+
+    app = FastAPI(title='Harness Lab · API local', lifespan=lifespan,
+                  docs_url=None, redoc_url=None, openapi_url='/api/openapi.json')
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', '[::1]'])
+
+    @app.middleware('http')
+    async def browser_boundary(request, call_next):
+        if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+            origin = request.headers.get('origin')
+            if (request.headers.get('x-harness-client') != 'local-ui'
+                    or origin is not None and origin != str(request.base_url).rstrip('/')
+                    or request.headers.get('sec-fetch-site') == 'cross-site'):
+                return JSONResponse({'error': 'REQUEST_REJECTED'}, status_code=403)
+        response = await call_next(request)
+        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Referrer-Policy'] = 'no-referrer'
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+
+    @app.exception_handler(ContractError)
+    async def domain_error(request, error):
+        status = (404 if error.code == 'NOT_FOUND' else 403 if error.code == 'FORBIDDEN' else
+                  429 if error.code == 'QUEUE_FULL' else 422 if error.code == 'INVALID_PAUSE' else 409)
+        return JSONResponse({'error': error.code}, status_code=status)
+
+    @app.exception_handler(Exception)
+    async def unexpected_error(request, error):
+        return JSONResponse({'error': 'INTERNAL_ERROR'}, status_code=500)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request, error):
+        return JSONResponse({'error': 'INVALID_REQUEST'}, status_code=422)
+
+    @app.get('/api/config')
+    async def config():
+        return {'workspace': 'Laboratorio local', 'identity_mode': 'development-fixture', 'execution_mode': 'worker' if storage == 'postgres' else 'local',
+                'scenarios': [{'id': key, 'title': value[0], 'description': value[1]} for key, value in SCENARIOS.items()]}
+
+    @app.get('/api/runs')
+    async def recent(request: Request):
+        return {'runs': request.app.state.service.recent()}
+
+    @app.post('/api/runs', status_code=202)
+    async def start(body: StartRequest, request: Request):
+        return request.app.state.service.start(body)
+
+    @app.get('/api/runs/{run_id}')
+    async def detail(run_id: UUID, request: Request):
+        service = request.app.state.service
+        return service.view(service.load(run_id))
+
+    @app.post('/api/runs/{run_id}/resume', status_code=202)
+    async def resume(run_id: UUID, body: ResumeRequest, request: Request):
+        from .telemetry import annotate
+        annotate(**{'run.id':str(run_id),'queue.action':'resume'})
+        return request.app.state.service.resume(run_id)
+
+    @app.get('/')
+    async def index():
+        return FileResponse(ROOT / 'frontend/index.html')
+
+    from .telemetry import TraceHTTP
+    app.add_middleware(TraceHTTP,service='harness-api')
+    app.mount('/assets', StaticFiles(directory=ROOT / 'frontend'), name='assets')
+    return app
+
+
+def main():
+    from .metrics import start
+    start()
+    import uvicorn
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--host', choices=['127.0.0.1', '0.0.0.0'], default='127.0.0.1')
+    parser.add_argument('--storage', choices=['sqlite', 'postgres'], default='sqlite')
+    parser.add_argument('--port', type=int, default=8000)
+    parser.add_argument('--db', type=Path, default=ROOT / 'data/runtime/harness.sqlite3')
+    args = parser.parse_args()
+    uvicorn.run(create_app(args.db, storage=args.storage), host=args.host, port=args.port, workers=1, access_log=False)
+
+
+if __name__ == '__main__':
+    main()

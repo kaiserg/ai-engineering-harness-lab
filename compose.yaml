@@ -1,0 +1,204 @@
+name: ai-engineering-harness-lab
+x-app: &app
+  image: ai-engineering-harness-lab:local
+  profiles: [app]
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  cap_add: [SETUID, SETGID, CHOWN, DAC_OVERRIDE, KILL]
+  security_opt: [no-new-privileges:true]
+  environment:
+    HARNESS_METRICS: "1"
+    HARNESS_TRACING: "1"
+    HARNESS_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
+    HARNESS_JIRA_TRANSPORT: http
+    HARNESS_POSTGRES_HOST: postgres
+    HARNESS_POSTGRES_PORT: "5432"
+  secrets: [postgres_app_password]
+  tmpfs:
+    - /tmp:mode=1777,size=64m
+    - /app/data/runtime:uid=10001,gid=10001,mode=0700,size=16m
+  depends_on:
+    postgres:
+      condition: service_healthy
+  restart: unless-stopped
+  stop_grace_period: 45s
+
+services:
+  api:
+    <<: *app
+    build: .
+    command: [python, -m, harness.web, --storage, postgres, --host, 0.0.0.0, --port, "8000"]
+    ports: ["127.0.0.1:8002:8000"]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/config', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  worker:
+    <<: *app
+    command: [python, -m, harness.worker]
+    environment:
+      HARNESS_METRICS: "1"
+      HARNESS_TRACING: "1"
+      HARNESS_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
+      HARNESS_CONTAINER_ROLE: worker
+      HARNESS_POSTGRES_HOST: postgres
+      HARNESS_POSTGRES_PORT: "5432"
+      HARNESS_SERVICE_IDENTITY: issuer
+      HARNESS_ISSUER_URL: https://identity:8443
+      HARNESS_JIRA_MCP_URL: https://jira-mcp:8443/mcp/
+    secrets: [postgres_app_password, tls_ca, mcp_client_secret]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      jira-mcp:
+        condition: service_healthy
+  jira-mcp:
+    <<: *app
+    command: [python, -m, harness.jira_http_server]
+    environment:
+      HARNESS_METRICS: "1"
+      HARNESS_TRACING: "1"
+      HARNESS_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
+      HARNESS_CONTAINER_ROLE: jira
+      HARNESS_MCP_BIND: 0.0.0.0
+      HARNESS_MCP_PORT: "8443"
+      HARNESS_SERVICE_IDENTITY: issuer
+      HARNESS_ISSUER_URL: https://identity:8443
+      HARNESS_LIVE_SECURITY: "1"
+    volumes: ["./data/runtime/live-delivery/jira:/run/live-delivery:ro"]
+    secrets: [tls_ca, jira_cert, jira_key, jira_delivery_key]
+    depends_on:
+      identity:
+        condition: service_healthy
+    ports: ["127.0.0.1:8010:8443"]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('https://127.0.0.1:8443/health', context=__import__('ssl').create_default_context(cafile='/app/data/runtime/tls-ca.pem'), timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  identity:
+    <<: *app
+    command: [python, -m, harness.identity_server]
+    environment:
+      HARNESS_METRICS: "1"
+      HARNESS_TRACING: "1"
+      HARNESS_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
+      HARNESS_CONTAINER_ROLE: identity
+      HARNESS_LIVE_SECURITY: "1"
+    volumes: ["./data/runtime/live-delivery/identity:/run/live-delivery:ro"]
+    secrets: [identity_cert, identity_key, issuer_signing, issuer_previous, mcp_client_secret, tls_ca, identity_delivery_key]
+    depends_on: {}
+    ports: ["127.0.0.1:8011:8443"]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request,ssl; urllib.request.urlopen('https://127.0.0.1:8443/health', context=ssl.create_default_context(cafile='/run/secrets/tls_ca'), timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    profiles: [app]
+    command: [--config.file=/etc/prometheus/prometheus.yml, --storage.tsdb.path=/prometheus, --storage.tsdb.retention.time=7d]
+    ports: ["127.0.0.1:9090:9090"]
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:9090/-/ready]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  alertmanager:
+    image: prom/alertmanager:v0.34.2
+    profiles: [app]
+    command: [--config.file=/etc/alertmanager/alertmanager.yml, --storage.path=/alertmanager, --cluster.listen-address=]
+    ports: ["127.0.0.1:9093:9093"]
+    volumes:
+      - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:9093/-/ready]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  grafana:
+    image: grafana/grafana:13.3.0
+    profiles: [app]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+    ports: ["127.0.0.1:3003:3000"]
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:3000/api/health]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  jaeger:
+    image: cr.jaegertracing.io/jaegertracing/jaeger:2.23.0
+    profiles: [app]
+    ports: ["127.0.0.1:16686:16686"]
+    restart: unless-stopped
+  postgres:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_DB: harness_lab
+      POSTGRES_USER: harness_admin
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_admin_password
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    secrets:
+      - postgres_admin_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U harness_admin -d harness_lab"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+volumes:
+  alertmanager_data:
+  prometheus_data:
+  grafana_data:
+  postgres_data:
+secrets:
+  postgres_admin_password:
+    file: ./data/runtime/postgres-admin-password
+  postgres_app_password:
+    file: ./data/runtime/postgres-app-password
+  tls_ca:
+    file: ./data/runtime/security-current/tls-ca.pem
+  jira_cert:
+    file: ./data/runtime/security-current/jira-cert.pem
+  jira_key:
+    file: ./data/runtime/security-current/jira-key.pem
+  identity_cert:
+    file: ./data/runtime/security-current/identity-cert.pem
+  identity_key:
+    file: ./data/runtime/security-current/identity-key.pem
+  issuer_signing:
+    file: ./data/runtime/security-current/issuer/mcp-worker-private.pem
+  mcp_client_secret:
+    file: ./data/runtime/security-current/mcp-client-secret
+  issuer_previous:
+    file: ./data/runtime/security-current/issuer-previous.json
+  identity_delivery_key:
+    file: ./data/runtime/identity-delivery-key
+  jira_delivery_key:
+    file: ./data/runtime/jira-delivery-key

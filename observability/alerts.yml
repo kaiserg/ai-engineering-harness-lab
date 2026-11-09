@@ -1,0 +1,40 @@
+groups:
+  - name: harness-operational
+    interval: 10s
+    rules:
+      - alert: HarnessExporterUnavailable
+        expr: up{job="harness"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          lab: harness
+          source: prometheus
+        annotations:
+          summary: Exporter del harness no disponible
+          description: Revisar el servicio indicado por role; up no prueba salud completa del negocio.
+          runbook_url: http://127.0.0.1:3003/d/harness-overview
+      - alert: HarnessStateUnavailable
+        expr: |
+          (harness_state_collection_success{job="harness",role="api"} == 0
+            or absent(harness_state_collection_success{job="harness",role="api"}))
+          and on(job,role) (up{job="harness",role="api"} == 1)
+        for: 30s
+        labels:
+          severity: warning
+          lab: harness
+          source: prometheus
+        annotations:
+          summary: Snapshot operativo de PostgreSQL no disponible
+          description: El exporter responde pero el snapshot falla o falta; no interpretar como cola vacía.
+          runbook_url: http://127.0.0.1:3003/d/harness-overview
+      - alert: HarnessCertificateExpiring
+        expr: harness_certificate_not_after_seconds{job="harness"} - time() < 604800
+        for: 5m
+        labels:
+          severity: warning
+          lab: harness
+          source: prometheus
+        annotations:
+          summary: Certificado TLS próximo a vencer
+          description: Revisar el planificador y el certificado activo; no desactivar TLS ni relajar validaciones.
+          runbook_url: http://127.0.0.1:3003/d/harness-overview
