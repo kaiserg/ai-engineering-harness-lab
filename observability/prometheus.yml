@@ -19,3 +19,10 @@ scrape_configs:
         labels: {role: identity}
       - targets: [jira-mcp:9100]
         labels: {role: jira}
+
+  - job_name: harness-writes
+    static_configs:
+      - targets: [host.docker.internal:9102]
+        labels: {role: write-worker}
+      - targets: [host.docker.internal:9103]
+        labels: {role: write-api}

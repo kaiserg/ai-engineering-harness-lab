@@ -12,7 +12,7 @@ _provider = None
 TRACEPARENT = re.compile(r'^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$')
 ALLOWED = {'run.id','job.attempt','job.fencing_token','job.age_ms','run.outcome',
     'run.model_calls','run.tool_calls','run.confirmed_results','tool.name','tool.call_id',
-    'error.code','http.response.status_code','queue.action'}
+    'error.code','http.response.status_code','queue.action','operation.id','proposal.id','write.phase','write.state'}
 ERROR_CODES = frozenset({
     'APPROVAL_EXPIRED', 'BUDGET_EXCEEDED', 'CANCELLED', 'CONFIG_CHANGED',
     'CONFLICT', 'CORRUPT_STATE', 'DATABASE_ERROR', 'DATABASE_IN_USE',
@@ -24,9 +24,10 @@ ERROR_CODES = frozenset({
     'MCP_UNAVAILABLE', 'NOT_FOUND', 'POSTGRES_NOT_CONFIGURED', 'QUEUE_FULL',
     'RUN_BUSY', 'RUN_DEADLINE_EXCEEDED', 'STORAGE_SCHEMA_UNSUPPORTED', 'TIME_BUDGET_UNKNOWN',
     'UNKNOWN_TOOL', 'UNSAFE_RECOVERY', 'UPSTREAM_TIMEOUT', 'UPSTREAM_UNAVAILABLE',
-    'WORKER_ATTEMPTS_EXCEEDED', 'WORK_NOT_CLAIMED',
+    'WORKER_ATTEMPTS_EXCEEDED', 'WORK_NOT_CLAIMED','OPERATION_BUSY','OPERATION_CLOSED','DISPATCH_EXPIRED',
+    'SIMULATOR_UNAVAILABLE','SIMULATOR_STATE_LOST','STALE_PRECONDITION','UNKNOWN_EFFECT','WRITE_ATTEMPTS_EXHAUSTED',
 })
-TOOLS = {'jira_get_issue','github_get_pull_request','jenkins_get_build'}
+TOOLS = {'jira_get_issue','github_get_pull_request','jenkins_get_build','jenkins_request_tests','jenkins_find_request','jenkins_current_revision','jenkins_close_request'}
 
 
 def configure(service, *, provider=None):
@@ -73,8 +74,10 @@ def attributes(values):
     for key,value in values.items():
         if key not in ALLOWED:
             continue
-        if key in ('run.id','tool.call_id') and (type(value) is not str or not re.fullmatch(r'[0-9a-f-]{36}',value)):
+        if key in ('run.id','tool.call_id','operation.id','proposal.id') and (type(value) is not str or not re.fullmatch(r'[0-9a-f-]{36}',value)):
             continue
+        if key=='write.phase' and value not in {'prepare','authorize','dispatch','lookup','resolution.prepare','resolution.confirm','mcp','worker'}:continue
+        if key=='write.state' and value not in {'PREPARED','DISPATCHING','UNKNOWN','SUCCEEDED','NOT_APPLIED','PENDING','RUNNING','DONE','NEEDS_REVIEW','PENDING_REVIEW','CONFIRMED'}:continue
         if key=='tool.name' and value not in TOOLS:
             value='unknown'
         if key=='error.code' and value not in ERROR_CODES:
@@ -138,7 +141,7 @@ def span(name, *, values=None, parent=None, root=False, links=(), kind=SpanKind.
             try:
                 # Mensaje/stacktrace pueden contener secretos; nunca record_exception automático.
                 code=getattr(error,'code',None) or ('UPSTREAM_TIMEOUT' if isinstance(error,TimeoutError) else
-                    'INTERRUPTED' if type(error).__name__=='RunInterrupted' else 'CANCELLED' if
+                    'INTERRUPTED' if type(error).__name__ in ('RunInterrupted','OperationInterrupted') else 'CANCELLED' if
                     type(error).__name__=='CancelledError' else 'INTERNAL_ERROR')
                 current.set_attributes(attributes({'error.code':code}))
                 current.set_status(Status(StatusCode.ERROR))
@@ -177,10 +180,16 @@ class TraceHTTP:
         name=('api.runs.create' if path=='/api/runs' else 'api.runs.resume' if re.fullmatch(
             r'/api/runs/[0-9a-f-]{36}/resume',path) else None) if self.service=='harness-api' else (
             'identity.token' if path=='/token' else 'mcp.http' if path.rstrip('/')=='/mcp' else None)
+        if self.service=='harness-api' and not name:
+            match=re.fullmatch(r'/api/operations/([0-9a-f-]{36})/(dispatch|reconcile|resolution|resolution/confirm)',path)
+            if match:name='api.write.'+{'dispatch':'submit','reconcile':'lookup','resolution':'resolution.prepare','resolution/confirm':'resolution.confirm'}[match[2]]
         if not name or scope['method']!='POST':
             return await self.app(scope,receive,send)
         incoming=dict(scope.get('headers',[])).get(b'traceparent',b'').decode('ascii',errors='replace')
-        with span(name,parent=incoming,root=self.service=='harness-api',kind=SpanKind.SERVER):
+        values={}
+        if self.service=='harness-api' and name.startswith('api.write.'):
+            values={'operation.id':path.split('/')[3]}
+        with span(name,parent=incoming,root=self.service=='harness-api',kind=SpanKind.SERVER,values=values):
             async def traced_send(message):
                 if message['type']=='http.response.start':
                     annotate(**{'http.response.status_code':message['status']})

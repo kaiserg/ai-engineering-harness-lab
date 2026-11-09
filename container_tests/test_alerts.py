@@ -31,8 +31,8 @@ class AlertComposeTests(unittest.TestCase):
 
     def test_dashboard_applied_and_viewer_cannot_write(self):
         dashboard=get('http://127.0.0.1:3003/apis/dashboard.grafana.app/v1/namespaces/default/dashboards/harness-overview')
-        self.assertEqual(len(dashboard['spec']['panels']),10)
-        self.assertEqual(dashboard['spec']['panels'][-1]['type'],'alertlist')
+        self.assertEqual(len(dashboard['spec']['panels']),16)
+        self.assertEqual(dashboard['spec']['panels'][9]['type'],'alertlist')
         import urllib.request,urllib.error
         request=urllib.request.Request('http://127.0.0.1:3003/api/dashboards/db',data=b'{}',
             headers={'Content-Type':'application/json'},method='POST')

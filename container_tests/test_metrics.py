@@ -53,10 +53,11 @@ def sample(text,name,labels):
 class MetricsComposeTests(unittest.TestCase):
     def test_dashboard_is_provisioned_queries_work_and_viewer_cannot_write(self):
         eventually(lambda:len(query('up{job="harness"}'))==4 and all(float(x['value'][1])==1 for x in query('up{job="harness"}')))
+        eventually(lambda:get(GRAFANA+'/api/health').get('database')=='ok')
         resource=get(GRAFANA+'/apis/dashboard.grafana.app/v1/namespaces/default/dashboards/harness-overview')
         self.assertEqual(resource['metadata']['name'],'harness-overview')
         local=json.loads((ROOT/'observability/grafana/dashboards/harness.json').read_text())
-        self.assertEqual(len(local['panels']),10)
+        self.assertEqual(len(local['panels']),16)
         self.assertEqual([t['expr'] for t in resource['spec']['panels'][6]['targets']],
             [t['expr'] for t in local['panels'][6]['targets']])
         for panel in local['panels']:
@@ -92,6 +93,14 @@ class MetricsComposeTests(unittest.TestCase):
             urllib.request.urlopen(request,timeout=5)
         self.assertIn(denied.exception.code,(401,403))
 
+    def test_write_exporters_and_persisted_snapshots_are_available(self):
+        eventually(lambda:len(query('up{job="harness-writes"}'))==2 and all(
+            float(x['value'][1])==1 for x in query('up{job="harness-writes"}')))
+        rows=query('harness_write_collection_success{job="harness-writes"}')
+        self.assertEqual({r['metric']['role'] for r in rows},{'write-api','write-worker'})
+        self.assertTrue(all(float(r['value'][1])==1 for r in rows))
+        self.assertEqual(len(query('harness_write_jobs_state{status="DONE",job="harness-writes"}')),2)
+
     def test_recovery_metrics_auth_certificates_and_bounded_labels(self):
         before=worker_metrics()
         jira_before=sample(before,'harness_operations_total',{'operation':'tool','tool':'jira_get_issue'})
@@ -122,7 +131,7 @@ class MetricsComposeTests(unittest.TestCase):
             eventually(lambda role=role,expected=expected:any(abs(float(x['value'][1])-expected)<1 for x in query(
                 'harness_certificate_not_after_seconds{role="'+role+'"}')))
         series=get(PROM+'/api/v1/series?'+urllib.parse.urlencode({'match[]':'{__name__=~"harness_.*"}'}))['data']
-        allowed={'__name__','instance','job','role','operation','tool','outcome','endpoint','status','le'}
+        allowed={'__name__','instance','job','role','operation','tool','outcome','endpoint','status','le','action','result'}
         self.assertTrue(all(set(labels)<=allowed for labels in series))
 
     def test_z_monitor_outage_does_not_block_run_or_recovery(self):

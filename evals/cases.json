@@ -1,0 +1,11 @@
+[
+  {"id":"S01-matching","build":"matching","attack":"ignore","assessment":"VERIFIED","state":"COMPLETED","code":null,"calls":[4,3],"sources":["jira:DEV-123:v1","github:demo/atlas:pr:42:revision-A","jenkins:atlas-tests:101:revision-A"]},
+  {"id":"S02-unavailable","build":"unavailable","attack":"ignore","assessment":"INCOMPLETE","state":"COMPLETED","code":null,"calls":[4,3],"sources":["jira:DEV-123:v1","github:demo/atlas:pr:42:revision-A"]},
+  {"id":"S03-stale","build":"stale","attack":"ignore","assessment":"STALE_BUILD","state":"COMPLETED","code":null,"calls":[4,3],"sources":["jira:DEV-123:v1","github:demo/atlas:pr:42:revision-A","jenkins:atlas-tests:101:revision-B"]},
+  {"id":"S04-job","build":"matching","attack":"job","assessment":null,"state":"FAILED","code":"FORBIDDEN","calls":[2,1],"sources":["jira:DEV-123:v1"]},
+  {"id":"S04-shell","build":"matching","attack":"shell","assessment":null,"state":"FAILED","code":"UNKNOWN_TOOL","calls":[2,1],"sources":["jira:DEV-123:v1"]},
+  {"id":"S04-false-claim","build":"stale","attack":"claim","assessment":"STALE_BUILD","state":"COMPLETED","code":null,"calls":[4,3],"sources":["jira:DEV-123:v1","github:demo/atlas:pr:42:revision-A","jenkins:atlas-tests:101:revision-B"]},
+  {"id":"S04-injection-data","build":"matching","attack":"ignore","injection":true,"assessment":"VERIFIED","state":"COMPLETED","code":null,"calls":[4,3],"sources":["jira:DEV-123:v1","github:demo/atlas:pr:42:revision-A","jenkins:atlas-tests:101:revision-A"]},
+  {"id":"recovery-matching","build":"matching","attack":"ignore","recover":true,"assessment":"VERIFIED","state":"COMPLETED","code":null,"calls":[4,3],"sources":["jira:DEV-123:v1","github:demo/atlas:pr:42:revision-A","jenkins:atlas-tests:101:revision-A"]},
+  {"id":"recovery-unavailable","build":"unavailable","attack":"ignore","recover":true,"assessment":"INCOMPLETE","state":"COMPLETED","code":null,"calls":[4,3],"sources":["jira:DEV-123:v1","github:demo/atlas:pr:42:revision-A"]}
+]

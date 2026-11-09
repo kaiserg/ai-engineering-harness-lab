@@ -1,6 +1,6 @@
 # AI Engineering Harness Lab
 
-Etapa 2: construir y operar un harness DevOps desde su core. **M0–M2 y M3a/M3b están implementados en su alcance local:** core persistido, MCP Python/Go, comparación de revisiones, API y primer frontend. El modelo sigue guionado y Jira usa datos ficticios, ahora detrás de un servidor MCP local. No requiere API keys de proveedores ni llamadas pagadas; Compose genera claves locales de identidad de servicio. Los cuatro documentos iniciales describen la arquitectura objetivo, no una plataforma ya terminada.
+Etapa 2: construir y operar un harness DevOps desde su core. El recorrido local incluye lectura persistida, MCP Python/Go, API/frontend, workers con leases/fencing, identidad de servicio/TLS y observabilidad. **M4a–M4h agregan acciones aprobadas sobre un proveedor ficticio**, recuperación sin reenvío y evaluaciones deterministas. El modelo y los backends DevOps siguen simulados: no requiere API keys ni llamadas pagadas. Usuarios reales, RAG y conectores reales siguen pendientes. Los cuatro documentos iniciales distinguen la arquitectura objetivo del estado actual en [la matriz de cierre](docs/status.md).
 
 ## Levantar la app completa con Compose
 
@@ -25,9 +25,9 @@ Para la integración de contenedores: `uv run python -m unittest discover -s con
 
 Abrí **[Harness Lab · Operación](http://127.0.0.1:3003/d/harness-overview)**. El dashboard provisionado muestra scrapeo, cola/leases, estados de runs, intentos/recuperaciones, p95 de intento/modelo/tools, rechazos auth y vencimiento TLS. Usa un Viewer anónimo local sin administrador inicial; la configuración se mantiene en `observability/`.
 
-**[Prometheus](http://127.0.0.1:9090)** scrapea cuatro exporters internos cada 10 segundos. Los contadores de proceso se distinguen de los Gauges durables de PostgreSQL; no usamos UUID, usuarios, contenido ni credenciales como etiquetas. Esperá dos o tres scrapes después de generar tráfico para ver distribuciones. La caída de los monitores no bloquea ejecución/recuperación.
+**[Prometheus](http://127.0.0.1:9090)** scrapea cuatro exporters internos cada 10 segundos y dos targets opcionales del host para el canal M4 de escrituras (ver M4g al final). Los contadores de proceso se distinguen de los Gauges durables de PostgreSQL; no usamos UUID, usuarios, contenido ni credenciales como etiquetas. Esperá dos o tres scrapes después de generar tráfico para ver distribuciones. La caída de los monitores no bloquea ejecución/recuperación.
 
-Prometheus conserva siete días en su volumen; `down` conserva sus datos y los de Grafana/PostgreSQL. Las decisiones, tipos de métricas y ejercicios están en la sección 28 de `docs/guide.md`. No hay alertas/notificaciones configuradas todavía.
+Prometheus conserva siete días en su volumen; `down` conserva sus datos y los de Grafana/PostgreSQL. Las decisiones, tipos de métricas y ejercicios están en la sección 28 de `docs/guide.md`. Las alertas actuales se describen más abajo; el receptor es local y no envía notificaciones externas.
 
 ## Trazas distribuidas con OpenTelemetry y Jaeger
 
@@ -67,7 +67,7 @@ Abrí **[http://127.0.0.1:8000](http://127.0.0.1:8000)**. La consola permite eje
 
 Para practicar, elegí **Build de otra revisión → Después de GitHub → Iniciar ejecución → Recuperar run**. Para un informe parcial, elegí **Jenkins no disponible** y la pausa tras su fallo.
 
-La app corre localmente con identidad sintética y una ejecución a la vez. No es autenticación multiusuario ni un worker durable. La CLI persistida y la web no pueden usar simultáneamente la misma base: detené el servidor antes de ejecutar comandos persistidos sobre ella. El bloqueo se libera al cerrar la app. Podés elegir otra base con `--db` u otro puerto con `--port`.
+Este modo SQLite corre localmente con identidad sintética y una ejecución a la vez. No es autenticación multiusuario ni el worker PostgreSQL durable descrito en los incrementos posteriores. La CLI persistida y la web no pueden usar simultáneamente la misma base: detené el servidor antes de ejecutar comandos persistidos sobre ella. El bloqueo se libera al cerrar la app. Podés elegir otra base con `--db` u otro puerto con `--port`.
 
 ## Ejecutar M0
 
@@ -282,4 +282,75 @@ El ejercicio detiene temporalmente solo el worker del laboratorio; requiere cola
 
 ### Alcance y próximos hitos
 
-La [matriz de cierre](docs/status.md) contrasta M0–M7 y S01–S12 con la implementación. M4 (acciones aprobadas/efectos inciertos) y M5 (conocimiento) siguen pendientes; la observabilidad local de M6 se adelantó. El próximo incremento propuesto es una línea base de evals deterministas, seguida de M4 por pasos.
+La [matriz de cierre](docs/status.md) contrasta M0–M7 y S01–S12 con la implementación. M4a–M4h incluyen propuestas/aprobaciones, ledger, MCP, frontend, revisión manual, worker y observabilidad de escrituras sobre un proveedor ficticio. Las líneas base reúnen nueve evals de lectura y ocho de escritura. El próximo incremento aborda identidad de usuarios y autorización por workspace; RAG M5, conectores/modelo reales y endurecimiento M7 siguen pendientes.
+
+### Repetir sin bases anteriores y ejecutar evals
+
+No necesitás copiar bases: SQLite crea sus tablas al abrirse, y `stack.py up` prepara PostgreSQL/credenciales/migraciones sobre un volumen nuevo. Los datos DevOps son fixtures versionados; el historial arranca vacío. Conservá runtime junto a los volúmenes si querés mantener una instalación existente.
+
+Para evaluar el recorrido MCP sin Docker, con Python/uv y Go según `.go-version`:
+
+```bash
+uv sync --locked
+uv run python scripts/build_jenkins.py
+uv run python scripts/evaluate.py
+```
+
+Los nueve casos usan SQLite temporales y no tocan la base de la app. Evalúan resultados, citas, llamadas autorizadas y recuperación sin repetir Jira. Reporte privado: `data/runtime/evals/latest.json`; salida no cero ante fallos. Son decisiones guionadas, sin llamadas a un LLM real. Ver [guía, sección 30](docs/guide.md#evaluaciones-deterministas-del-recorrido).
+
+### M4a propuestas y aprobaciones persistidas
+
+Con PostgreSQL preparado y Jenkins MCP compilado, ejecutá `uv run python scripts/proposals.py prepare` para generar evidencia sintética. La [guía, sección 31](docs/guide.md#m4a-propuestas-y-aprobaciones-persistidas) explica cómo crear una propuesta con key estable y decidir con su hash/versión. Las propuestas y decisiones sobreviven entre procesos, rechazan autoaprobación y no despachan escrituras DevOps todavía. Las identidades de la CLI son fixtures locales, no autenticación de usuarios.
+
+### M4b ledger y efecto Jenkins simulado
+
+Con una propuesta aprobada y vigente:
+
+```bash
+uv run python scripts/operations.py prepare PROPOSAL_ID
+uv run python scripts/operations.py dispatch OPERATION_ID
+uv run python scripts/operations.py show OPERATION_ID
+```
+
+La [guía, sección 32](docs/guide.md#m4b-ledger-y-despacho-jenkins-simulado) explica consumo atómico, revisión vigente, operación única y simulación de respuesta perdida con `--interrupt after-send`. La recuperación usa `reconcile` y consulta el mismo ID sin reenviar. El efecto vive en una SQLite independiente e ignorada; no llama Jenkins real. M4c conecta el canal MCP y M4e agrega revisión manual con cierre durable. Una búsqueda vacía por sí sola conserva UNKNOWN y bloquea nuevas escrituras al recurso.
+
+### M4c transporte MCP del simulador de escritura
+
+`scripts/operations.py` usa MCP stdio por defecto para consultar revisión, solicitar pruebas y buscar el recibo. Un servidor Python separado envuelve el mismo SQLite persistente del simulador; el MCP Go de lectura sigue sin cambios. No se registran escrituras para el modelo. `--transport direct` permite comparar con el adaptador anterior. La [guía, sección 33](docs/guide.md#m4c-despacho-y-consulta-del-efecto-por-mcp) explica schemas, timeout y recuperación ante caída del proceso MCP tras el commit del efecto.
+
+### M4d pantalla local de propuestas y operaciones
+
+Con Compose/worker activos, habilitá explícitamente el modo local PostgreSQL:
+
+```bash
+uv run python -m harness.web --storage postgres --approvals-demo --port 8003
+```
+
+Abrí http://127.0.0.1:8003. La sección «Propuestas y operaciones» permite revisar, aprobar/rechazar con fixtures, consumir, enviar por MCP y consultar un efecto incierto sin reenviar. Comparte PostgreSQL y el proveedor persistente de la CLI; el contenedor 8002 conserva su modo anterior. Las rutas M4 están desactivadas sin la opción y requieren bind local. No hay autenticación de dos usuarios reales. Ver [guía, sección 34](docs/guide.md#m4d-propuestas-y-operaciones-desde-api-y-frontend-local).
+
+### M4e revisión manual de UNKNOWN
+
+El modo local 8003 permite practicar «Antes del envío», consultar sin resultado y cerrar permanentemente ese ID en el simulador. Otro actor de prueba confirma la evidencia/hash antes de registrar NOT_APPLIED. No se reenvía ni se reutiliza la aprobación. El proveedor conserva una marca de cierre que rechaza solicitudes tardías y una identidad de almacén para detectar la pérdida de su SQLite. Ver [guía, sección 35](docs/guide.md#m4e-resolución-manual-de-unknown-con-evidencia-del-proveedor). Es una garantía del simulador; no se asume que Jenkins real la ofrezca.
+
+### M4f worker de escrituras
+
+En dos terminales locales, con Compose/worker de lecturas activos:
+
+```bash
+uv run python -m harness.web --storage postgres --approvals-demo --write-worker --port 8003
+uv run python -m harness.write_worker
+```
+
+En este modo, la API admite el envío en PostgreSQL y responde 202. El worker reclama un trabajo único, revalida y usa MCP. Al recuperar DISPATCHING/UNKNOWN solo consulta; una búsqueda sin evidencia lo deja en revisión. El lease/heartbeat/fencing protege al propietario y no reinicia aprobación ni contadores. Ver [guía, sección 36](docs/guide.md#m4f-worker-independiente-de-escrituras). Sin `--write-worker`, el modo síncrono anterior sigue disponible para comparación.
+
+### M4g observar las escrituras
+
+La [guía, sección 37](docs/guide.md#m4g-observabilidad-del-worker-y-del-ledger-de-escrituras) explica los exporters locales 9102/9103 y la propagación OpenTelemetry al servidor MCP. Activá `HARNESS_TRACING=1`, `HARNESS_OTLP_ENDPOINT=http://127.0.0.1:4318/v1/traces` y `HARNESS_WRITE_METRICS=1` en ambos procesos M4. El dashboard existente agrega seis paneles; las trazas enlazan productor, envío y consulta de recuperación. Las métricas cuentan intentos, no garantizan efectos. Monitoreo opcional: permisos, ledger y recuperación conservan su autoridad.
+
+### M4h evaluaciones de escrituras
+
+```bash
+uv run python scripts/evaluate_writes.py
+```
+
+Requiere PostgreSQL local y el binario MCP Go de lectura construido. Ejecuta ocho escenarios en schemas/proveedores temporales: aprobación, rechazo, vencimiento, cambio de revisión, permisos retirados, pérdida de respuesta, recuperación y cierre manual. Compara estados, eventos, llamadas MCP y efectos; un SUCCEEDED con reenvío falla. No requiere API, worker de la app ni API keys. Reporte ignorado: `data/runtime/evals/writes-latest.json`; código de salida 1 si algo falla. Ver [guía, sección 38](docs/guide.md#m4h-evaluaciones-deterministas-de-escrituras) para las decisiones, criterios, aislamiento y límites.

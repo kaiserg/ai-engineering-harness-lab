@@ -177,9 +177,12 @@ class PostgresRunService(RunService):
         return self.view(run)
 
 
-def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg_dsn=None, pg_schema='harness_lab'):
+def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg_dsn=None, pg_schema='harness_lab', approvals_demo=False, approval_provider_path=None, write_worker=False):
     if storage not in ('sqlite', 'postgres'):
         raise ValueError('Backend de persistencia desconocido.')
+    if write_worker and not approvals_demo:raise ValueError('El worker de escrituras requiere el modo M4 local.')
+    if approvals_demo and (storage != 'postgres' or identity is not None and identity != demo_identity()):
+        raise ValueError('M4 demo requiere PostgreSQL y la identidad local de prueba.')
     path = Path(db) if db else ROOT / 'data/runtime/harness.sqlite3'
 
     @asynccontextmanager
@@ -194,6 +197,9 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
                 attach_state(lambda:store.operational_snapshot(app.state.service.identity))
             else:
                 app.state.service = RunService(SQLiteRunStore(path), identity or demo_identity(), composer)
+            if approvals_demo:
+                from .approval_web import ApprovalDemo
+                app.state.approval_demo = ApprovalDemo(store,approval_provider_path or ROOT/'data/runtime/jenkins-write-simulator.sqlite3',write_worker=write_worker)
             try:
                 yield
             finally:
@@ -235,7 +241,7 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
     @app.get('/api/config')
     async def config():
         return {'workspace': 'Laboratorio local', 'identity_mode': 'development-fixture', 'execution_mode': 'worker' if storage == 'postgres' else 'local',
-                'scenarios': [{'id': key, 'title': value[0], 'description': value[1]} for key, value in SCENARIOS.items()]}
+                'approvals_demo': approvals_demo, 'write_worker': write_worker, 'scenarios': [{'id': key, 'title': value[0], 'description': value[1]} for key, value in SCENARIOS.items()]}
 
     @app.get('/api/runs')
     async def recent(request: Request):
@@ -256,6 +262,10 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
         annotate(**{'run.id':str(run_id),'queue.action':'resume'})
         return request.app.state.service.resume(run_id)
 
+    if approvals_demo:
+        from .approval_web import install_routes
+        install_routes(app)
+
     @app.get('/')
     async def index():
         return FileResponse(ROOT / 'frontend/index.html')
@@ -275,8 +285,13 @@ def main():
     parser.add_argument('--storage', choices=['sqlite', 'postgres'], default='sqlite')
     parser.add_argument('--port', type=int, default=8000)
     parser.add_argument('--db', type=Path, default=ROOT / 'data/runtime/harness.sqlite3')
+    parser.add_argument('--approvals-demo',action='store_true',help='M4 local con dos identidades ficticias; solo loopback/PostgreSQL.')
+    parser.add_argument('--write-worker',action='store_true',help='Encolar envíos M4 para un worker independiente.')
     args = parser.parse_args()
-    uvicorn.run(create_app(args.db, storage=args.storage), host=args.host, port=args.port, workers=1, access_log=False)
+    if args.write_worker and not args.approvals_demo:parser.error('--write-worker requiere --approvals-demo')
+    if args.approvals_demo and (args.host != '127.0.0.1' or args.storage != 'postgres'):
+        parser.error('El modo M4 demo requiere --storage postgres y bind local 127.0.0.1.')
+    uvicorn.run(create_app(args.db, storage=args.storage,approvals_demo=args.approvals_demo,write_worker=args.write_worker), host=args.host, port=args.port, workers=1, access_log=False)
 
 
 if __name__ == '__main__':

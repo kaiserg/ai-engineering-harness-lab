@@ -13,7 +13,7 @@
     <div class="nav-title">EXPLORAR</div>
     <div class="nav-item selected"><span>◈</span> Consola de ejecuciones</div>
     <div class="nav-item muted"><span>◇</span> Conocimiento <small>Después</small></div>
-    <div class="nav-item muted"><span>▱</span> Aprobaciones <small>Después</small></div>
+    <div id="approval-unavailable" class="nav-item muted"><span>▱</span> Aprobaciones <small>Después</small></div><a id="approval-nav" href="#approval-panel" class="nav-item" hidden><span>▱</span> Propuestas y operaciones</a>
     <div class="recent-heading"><div class="nav-title">EJECUCIONES RECIENTES</div><button id="refresh" class="icon-button" aria-label="Actualizar ejecuciones">↻</button></div>
     <div id="recent-runs" class="recent-runs"><p class="sidebar-empty">Todavía no hay ejecuciones.</p></div>
     <div class="sidebar-footer"><div class="avatar">D</div><div>Identidad de desarrollo<small>Lector · workspace de prueba</small></div><span class="live-dot"></span></div>
@@ -46,6 +46,36 @@
             <div class="evidence-header"><h3>Evidencia y referencias</h3><span>Contenido externo · solo datos</span></div><div id="evidence-list"></div>
           </div>
         </section>
+      </section>
+      <section id="approval-panel" class="card approval-panel" hidden aria-labelledby="approval-heading">
+        <div class="section-kicker">03 / PROPONER Y AUTORIZAR</div><h2 id="approval-heading">Pruebas con aprobación</h2>
+        <p class="demo-banner">Demostración local con operador y aprobador de prueba. Una persona puede realizar ambos pasos; no es autenticación de dos usuarios.</p>
+        <p id="approval-help" class="field-help">Elegí una lectura completada para proponer pruebas sobre su revisión.</p>
+        <div class="approval-actions"><button id="proposal-create" class="secondary-button" type="button" disabled>Crear o recuperar propuesta</button><button id="approval-refresh" class="secondary-button" type="button">Actualizar estado</button></div>
+        <div id="approval-message" class="field-help" role="status" aria-live="polite"></div>
+        <div id="proposal-content" hidden>
+          <label for="proposal-select">Propuestas de esta ejecución</label><select id="proposal-select"></select>
+          <div class="approval-columns"><div>
+            <h3>Revisar como aprobador de prueba</h3><span id="proposal-status" class="badge neutral"></span>
+            <dl id="proposal-facts" class="proposal-facts"></dl>
+            <details class="evidence-item"><summary>Contenido exacto de la propuesta</summary><pre id="proposal-payload"></pre></details>
+            <div class="approval-actions"><button id="proposal-approve" class="secondary-button" type="button">Aprobar propuesta</button><button id="proposal-reject" class="secondary-button" type="button">Rechazar</button></div>
+          </div><div>
+            <h3>Operar la solicitud aprobada</h3><p class="field-help">Aceptar una solicitud en la cola simulada no significa que CI pasó.</p>
+            <button id="operation-prepare" class="secondary-button" type="button">Preparar operación única</button>
+            <div id="operation-content" hidden>
+              <p><span id="operation-status" class="badge neutral"></span></p><code id="operation-id"></code>
+              <label class="simulation-option" for="operation-interrupt">Punto de fallo del ejercicio</label><select id="operation-interrupt"><option value="">Sin interrupción</option><option value="after-send">Después de aceptar la solicitud</option><option value="before-send">Antes del envío (practicar resolución)</option></select>
+              <div class="approval-actions"><button id="operation-dispatch" class="primary-button" type="button">Solicitar pruebas simuladas</button><button id="operation-reconcile" class="secondary-button" type="button">Consultar efecto sin reenviar</button></div>
+              <p id="operation-note" class="field-help"></p><p id="write-job" class="field-help" hidden></p>
+              <div id="resolution-section" hidden><h3>Revisión manual del resultado incierto</h3><p class="field-help">Primero cerramos este identificador en el simulador. Después, el aprobador de prueba revisa la evidencia; no se reenvía la solicitud.</p>
+                <button id="resolution-prepare" class="secondary-button" type="button">Cerrar identificador y preparar revisión</button>
+                <div id="resolution-detail" hidden><p id="resolution-summary"></p><details class="evidence-item"><summary>Evidencia exacta del proveedor</summary><pre id="resolution-evidence"></pre></details>
+                  <p id="resolution-hash" class="field-help"></p><button id="resolution-confirm" class="secondary-button" type="button">Confirmar conclusión como aprobador de prueba</button></div>
+              </div><ol id="operation-events" class="operation-events"></ol>
+            </div>
+          </div></div>
+        </div>
       </section>
       <footer class="page-footer"><span><span class="live-dot"></span> Tres herramientas · consultas de lectura por MCP</span><span>Laboratorio educativo · M3a / M3b</span></footer>
     </div>

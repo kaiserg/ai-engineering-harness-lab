@@ -1,0 +1,196 @@
+[
+  {
+    "id": "M4-approved",
+    "scenario": "approved",
+    "expected": {
+      "proposal": "CONSUMED",
+      "effective_proposal": "CONSUMED",
+      "operation": "SUCCEEDED",
+      "job": "DONE",
+      "claims": 1,
+      "effects": 1,
+      "calls": {
+        "revision": 1,
+        "request": 1,
+        "lookup": 0,
+        "close": 0
+      },
+      "events": [
+        "PREPARED",
+        "DISPATCHING",
+        "SUCCEEDED"
+      ],
+      "code": null,
+      "review": null
+    }
+  },
+  {
+    "id": "M4-rejected",
+    "scenario": "rejected",
+    "expected": {
+      "proposal": "REJECTED",
+      "effective_proposal": "REJECTED",
+      "operation": null,
+      "job": null,
+      "claims": 0,
+      "effects": 0,
+      "calls": {
+        "revision": 0,
+        "request": 0,
+        "lookup": 0,
+        "close": 0
+      },
+      "events": [],
+      "code": "CONFLICT",
+      "review": null
+    }
+  },
+  {
+    "id": "M4-expired",
+    "scenario": "expired",
+    "expected": {
+      "proposal": "APPROVED",
+      "effective_proposal": "EXPIRED",
+      "operation": null,
+      "job": null,
+      "claims": 0,
+      "effects": 0,
+      "calls": {
+        "revision": 0,
+        "request": 0,
+        "lookup": 0,
+        "close": 0
+      },
+      "events": [],
+      "code": "APPROVAL_EXPIRED",
+      "review": null
+    }
+  },
+  {
+    "id": "M4-stale",
+    "scenario": "stale",
+    "expected": {
+      "proposal": "CONSUMED",
+      "effective_proposal": "CONSUMED",
+      "operation": "NOT_APPLIED",
+      "job": "DONE",
+      "claims": 1,
+      "effects": 0,
+      "calls": {
+        "revision": 1,
+        "request": 1,
+        "lookup": 0,
+        "close": 0
+      },
+      "events": [
+        "PREPARED",
+        "DISPATCHING",
+        "NOT_APPLIED"
+      ],
+      "code": "STALE_PRECONDITION",
+      "review": null
+    }
+  },
+  {
+    "id": "M4-revoked",
+    "scenario": "revoked",
+    "expected": {
+      "proposal": "CONSUMED",
+      "effective_proposal": "CONSUMED",
+      "operation": "NOT_APPLIED",
+      "job": "DONE",
+      "claims": 1,
+      "effects": 0,
+      "calls": {
+        "revision": 1,
+        "request": 0,
+        "lookup": 0,
+        "close": 0
+      },
+      "events": [
+        "PREPARED",
+        "NOT_APPLIED"
+      ],
+      "code": "FORBIDDEN",
+      "review": null
+    }
+  },
+  {
+    "id": "M4-response-lost",
+    "scenario": "response-lost",
+    "expected": {
+      "proposal": "CONSUMED",
+      "effective_proposal": "CONSUMED",
+      "operation": "SUCCEEDED",
+      "job": "DONE",
+      "claims": 1,
+      "effects": 1,
+      "calls": {
+        "revision": 1,
+        "request": 1,
+        "lookup": 1,
+        "close": 0
+      },
+      "events": [
+        "PREPARED",
+        "DISPATCHING",
+        "UNKNOWN",
+        "SUCCEEDED"
+      ],
+      "code": null,
+      "review": null
+    }
+  },
+  {
+    "id": "M4-after-send",
+    "scenario": "after-send",
+    "expected": {
+      "proposal": "CONSUMED",
+      "effective_proposal": "CONSUMED",
+      "operation": "SUCCEEDED",
+      "job": "DONE",
+      "claims": 2,
+      "effects": 1,
+      "calls": {
+        "revision": 1,
+        "request": 1,
+        "lookup": 1,
+        "close": 0
+      },
+      "events": [
+        "PREPARED",
+        "DISPATCHING",
+        "UNKNOWN",
+        "SUCCEEDED"
+      ],
+      "code": null,
+      "review": null
+    }
+  },
+  {
+    "id": "M4-manual-closure",
+    "scenario": "manual-closure",
+    "expected": {
+      "proposal": "CONSUMED",
+      "effective_proposal": "CONSUMED",
+      "operation": "NOT_APPLIED",
+      "job": "DONE",
+      "claims": 2,
+      "effects": 0,
+      "calls": {
+        "revision": 1,
+        "request": 0,
+        "lookup": 1,
+        "close": 2
+      },
+      "events": [
+        "PREPARED",
+        "DISPATCHING",
+        "UNKNOWN",
+        "NOT_APPLIED"
+      ],
+      "code": "MANUAL_PROVIDER_CLOSURE",
+      "review": "CONFIRMED"
+    }
+  }
+]

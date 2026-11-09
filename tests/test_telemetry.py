@@ -99,3 +99,10 @@ class TelemetryTests(unittest.IsolatedAsyncioTestCase):
         t._provider=None
         with patch.dict('os.environ',{'HARNESS_TRACING':'1','HARNESS_OTLP_ENDPOINT':'https://example.invalid/secret'}):
             self.assertIsNone(t.configure('test'))
+
+    async def test_write_attributes_are_bounded_and_payload_is_excluded(self):
+        values=t.attributes({'operation.id':'12345678-1234-1234-1234-123456789abc',
+            'proposal.id':'PRIVATE_SENTINEL','write.phase':'lookup','write.state':'UNKNOWN',
+            'arguments':'PRIVATE_SENTINEL','payload_hash':'PRIVATE_SENTINEL','actor_id':'PRIVATE_SENTINEL'})
+        self.assertEqual(set(values),{'operation.id','write.phase','write.state'})
+        self.assertEqual(t.attributes({'write.phase':'PRIVATE_SENTINEL','write.state':'PRIVATE_SENTINEL'}),{})
