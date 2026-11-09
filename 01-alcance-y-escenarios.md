@@ -1,6 +1,6 @@
 # Etapa 2 — Alcance y escenarios del harness DevOps
 
-> **Avance de implementación:** M0 y M1 funcionan con SQLite, recuperación de lecturas y tiempo activo persistido. M2 conecta Jira/GitHub ficticios en Python y Jenkins ficticio en Go por MCP local, con permisos por recurso, recuperación, comparación determinista de revisiones e informe parcial ante ausencia de Jenkins (S02). M2 cubre S01–S04 con modelo y backends simulados, incluidas decisiones adversariales forzadas. M3a/M3b agregan API local y frontend sobre SQLite, con identidad de desarrollo, ejecución serial, bloqueo CLI/API y recuperación desde pantalla. M3c agrega PostgreSQL/Compose, productor API y worker independiente con leases, fencing, recuperación y frontend PostgreSQL opcional. Compose ya opera PostgreSQL/API/worker; MCP sigue en stdio dentro del worker. Pasaron 126 pruebas habituales, 36 PostgreSQL, 5 Compose y las 2 Go previas. Identidad remota, evals con LLM real, escrituras y operación distribuida siguen pendientes. Ver [la guía de construcción](docs/guide.md).
+> **Estado actualizado:** el recorrido de lectura funciona con modelo y backends DevOps simulados. PostgreSQL/API/worker, Jira por MCP Streamable HTTP con identidad de servicio/TLS, rotación, trazas, métricas y alertas están implementados en local. M3 conserva pendientes de aislamiento operativo; M4 tiene contratos puros y M5/M7 siguen pendientes. Ver [la matriz de cierre](docs/status.md) y [la guía](docs/guide.md) para evidencia y límites.
 
 **Estado:** diseño objetivo; M0 y el incremento de persistencia de M1 tienen el avance indicado arriba. Esta etapa aprende a construir y operar un harness con requisitos empresariales. Los sistemas, identidades y datos de los ejercicios serán ficticios; el diseño no describe la infraestructura de una empresa concreta.
 
@@ -12,7 +12,7 @@ Construir un asistente de operaciones que reúna evidencia de Jira, GitHub, Jenk
 
 El objetivo es comprender y mantener el core: decisiones del LLM, ejecución de herramientas, estado persistente, autorización, concurrencia y fallos. Una interfaz completa llegará después de un recorrido verificable de extremo a extremo.
 
-El laboratorio anterior se conserva como referencia pequeña. Esta carpeta será un proyecto independiente; no trasladamos sus claves, bases, informes ni instantáneas Git. En esta entrega solo hay cuatro documentos, sin aplicación, repositorio nuevo ni conexión a servicios reales.
+El laboratorio anterior se conserva como referencia pequeña. Esta carpeta será un proyecto independiente; no trasladamos sus claves, bases, informes ni instantáneas Git. El diseño inicial constaba de cuatro documentos; el repositorio ya contiene aplicación, pruebas y documentación incremental. No conectamos todavía proveedores DevOps reales.
 
 ## 2. Escenario principal
 
@@ -70,7 +70,7 @@ Los hitos son orden de trabajo, no fechas prometidas. No agregamos una dependenc
 | M6 — Operación observable | Compose, métricas, trazas distribuidas, dashboards y runbooks. | Diagnosticar un fallo y reconstruir una ejecución sin secretos. |
 | M7 — Endurecimiento | Integraciones reales de sandbox, OIDC, pruebas de carga y revisión de amenazas. | Evals y evidencias operativas antes de conectar escrituras reales. |
 
-**Orden ajustado tras cerrar M2 simulado:** M3a y M3b ya implementan API local y frontend para escenarios, runs, evidencia y recuperación sobre el core/SQLite. M3c ya incorpora PostgreSQL, trabajo durable y worker con leases/fencing; servicios remotos e identidad empresarial siguen pendientes. Es una secuencia de incrementos: la API y pantalla locales no cumplen por sí solas los criterios distribuidos de M3.
+**Orden ajustado tras cerrar M2 simulado:** M3a y M3b ya implementan API local y frontend para escenarios, runs, evidencia y recuperación sobre el core/SQLite. M3c ya incorpora PostgreSQL, trabajo durable y worker con leases/fencing; Jira ya usa MCP Streamable HTTP con identidad de servicio y TLS. La identidad de usuarios y el aislamiento operativo completo siguen pendientes. Es una secuencia de incrementos: la API y pantalla locales no cumplen por sí solas los criterios distribuidos de M3.
 
 Las trazas y pruebas empiezan en M1; M6 añade exportación y operación de varios servicios. Docker Compose se introduce cuando aparecen procesos separados, con perfiles para no levantar toda la plataforma en cada ejercicio. Kubernetes se estudia después, si hay un objetivo comprobable de despliegue o escalado.
 

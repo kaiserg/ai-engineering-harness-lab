@@ -279,3 +279,7 @@ uv run python scripts/incident.py recover
 ```
 
 El ejercicio detiene temporalmente solo el worker del laboratorio; requiere cola inactiva y ningún otro consumidor. Restaura el servicio y comprueba la evidencia Jira sin duplicarla. El journal privado queda en `data/runtime/`, ignorado por Git.
+
+### Alcance y próximos hitos
+
+La [matriz de cierre](docs/status.md) contrasta M0–M7 y S01–S12 con la implementación. M4 (acciones aprobadas/efectos inciertos) y M5 (conocimiento) siguen pendientes; la observabilidad local de M6 se adelantó. El próximo incremento propuesto es una línea base de evals deterministas, seguida de M4 por pasos.

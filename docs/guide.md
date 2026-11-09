@@ -2,6 +2,8 @@
 
 Esta guía registra lo que ya funciona y explica cómo se relaciona con el diseño. Leer [el alcance](../01-alcance-y-escenarios.md) para ver los hitos futuros. Los ejemplos usan datos ficticios y no requieren API keys.
 
+Para distinguir lo implementado del diseño objetivo, consultá la [matriz de cierre de etapa 2](status.md), con hitos, escenarios y pendientes.
+
 ## Índice
 
 1. [M0 y su límite](#m0-y-su-límite).
