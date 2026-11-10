@@ -177,7 +177,12 @@ class PostgresRunService(RunService):
         return self.view(run)
 
 
-def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg_dsn=None, pg_schema='harness_lab', approvals_demo=False, approval_provider_path=None, write_worker=False):
+def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg_dsn=None, pg_schema=None, approvals_demo=False, approval_provider_path=None, write_worker=False, user_auth=False, user_directory=None):
+    pg_schema=pg_schema or ('harness_users_lab' if user_auth else 'harness_lab')
+    if not user_auth and pg_schema=='harness_users_lab':
+        raise ValueError('El schema reservado de usuarios requiere --user-auth.')
+    if user_auth and (storage!='postgres' or approvals_demo or identity is not None or pg_schema=='harness_lab'):
+        raise ValueError('Identidad de usuario requiere PostgreSQL aislado y rutas de lectura sin fixtures M4.')
     if storage not in ('sqlite', 'postgres'):
         raise ValueError('Backend de persistencia desconocido.')
     if write_worker and not approvals_demo:raise ValueError('El worker de escrituras requiere el modo M4 local.')
@@ -192,9 +197,18 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
                 from .postgres_store import PostgresRunStore
                 from .postgres_config import local_dsn
                 store = PostgresRunStore(pg_dsn or local_dsn(), schema=pg_schema)
-                app.state.service = PostgresRunService(store, identity or demo_identity(), composer)
-                from .metrics import attach_state
-                attach_state(lambda:store.operational_snapshot(app.state.service.identity))
+                app.state.run_store=store
+                if user_auth:
+                    from .user_identity import UserIdentityStore
+                    app.state.user_directory=user_directory or UserIdentityStore(PostgresRunStore(pg_dsn or local_dsn()))
+                    app.state.service=None
+                    from .authenticated_proposals import AuthenticatedProposals
+                    app.state.user_proposals=AuthenticatedProposals(store,app.state.user_directory,
+                        approval_provider_path or ROOT/'data/runtime/jenkins-authenticated-simulator.sqlite3')
+                else:
+                    app.state.service = PostgresRunService(store, identity or demo_identity(), composer)
+                    from .metrics import attach_state
+                    attach_state(lambda:store.operational_snapshot(app.state.service.identity))
             else:
                 app.state.service = RunService(SQLiteRunStore(path), identity or demo_identity(), composer)
             if approvals_demo:
@@ -203,14 +217,30 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
             try:
                 yield
             finally:
-                await app.state.service.close()
+                if app.state.service is not None:await app.state.service.close()
 
     app = FastAPI(title='Harness Lab · API local', lifespan=lifespan,
                   docs_url=None, redoc_url=None, openapi_url='/api/openapi.json')
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', '[::1]'])
 
+    def request_service(request):
+        if user_auth:return PostgresRunService(request.app.state.run_store,request.state.identity,composer)
+        return request.app.state.service
+
     @app.middleware('http')
     async def browser_boundary(request, call_next):
+        if user_auth and request.url.path.startswith('/api/'):
+            try:
+                request.state.identity=await asyncio.to_thread(request.app.state.user_directory.authenticate,
+                    request.headers.get('authorization'),request.headers.get('x-harness-workspace'))
+                if request.url.path.startswith('/api/runs') and not request.state.identity.roles & {'reader','operator'}:
+                    raise ContractError('FORBIDDEN')
+            except ContractError as error:
+                status=401 if error.code=='UNAUTHENTICATED' else 403 if error.code=='FORBIDDEN' else 503
+                return JSONResponse({'error':error.code if status in (401,403) else 'IDENTITY_UNAVAILABLE'},
+                    status_code=status,headers={'Cache-Control':'no-store',**({'WWW-Authenticate':'Bearer'} if status==401 else {})})
+            except Exception:
+                return JSONResponse({'error':'IDENTITY_UNAVAILABLE'},status_code=503,headers={'Cache-Control':'no-store'})
         if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
             origin = request.headers.get('origin')
             if (request.headers.get('x-harness-client') != 'local-ui'
@@ -226,7 +256,7 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
 
     @app.exception_handler(ContractError)
     async def domain_error(request, error):
-        status = (404 if error.code == 'NOT_FOUND' else 403 if error.code == 'FORBIDDEN' else
+        status = (503 if error.code=='IDENTITY_UNAVAILABLE' else 404 if error.code == 'NOT_FOUND' else 403 if error.code == 'FORBIDDEN' else
                   429 if error.code == 'QUEUE_FULL' else 422 if error.code == 'INVALID_PAUSE' else 409)
         return JSONResponse({'error': error.code}, status_code=status)
 
@@ -239,28 +269,38 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
         return JSONResponse({'error': 'INVALID_REQUEST'}, status_code=422)
 
     @app.get('/api/config')
-    async def config():
-        return {'workspace': 'Laboratorio local', 'identity_mode': 'development-fixture', 'execution_mode': 'worker' if storage == 'postgres' else 'local',
-                'approvals_demo': approvals_demo, 'write_worker': write_worker, 'scenarios': [{'id': key, 'title': value[0], 'description': value[1]} for key, value in SCENARIOS.items()]}
+    async def config(request:Request):
+        return {'workspace':request.state.identity.workspace_id if user_auth else 'Laboratorio local', 'identity_mode': 'local-user-credential' if user_auth else 'development-fixture', 'execution_mode': 'worker' if storage == 'postgres' else 'local',
+                'approvals_demo': approvals_demo, 'authenticated_proposals':user_auth, 'authenticated_dispatch':user_auth, 'write_worker': write_worker, 'scenarios': [{'id': key, 'title': value[0], 'description': value[1]} for key, value in SCENARIOS.items()]}
 
     @app.get('/api/runs')
     async def recent(request: Request):
-        return {'runs': request.app.state.service.recent()}
+        return {'runs': request_service(request).recent()}
 
     @app.post('/api/runs', status_code=202)
     async def start(body: StartRequest, request: Request):
-        return request.app.state.service.start(body)
+        return request_service(request).start(body)
 
     @app.get('/api/runs/{run_id}')
     async def detail(run_id: UUID, request: Request):
-        service = request.app.state.service
+        service = request_service(request)
         return service.view(service.load(run_id))
 
     @app.post('/api/runs/{run_id}/resume', status_code=202)
     async def resume(run_id: UUID, body: ResumeRequest, request: Request):
         from .telemetry import annotate
         annotate(**{'run.id':str(run_id),'queue.action':'resume'})
-        return request.app.state.service.resume(run_id)
+        return request_service(request).resume(run_id)
+
+    if user_auth:
+        @app.get('/api/me')
+        def me(request:Request):
+            from .user_identity import view
+            return {'identity':view(request.state.identity),'mode':'authenticated-user-api'}
+        from .authenticated_proposals import install_routes
+        install_routes(app)
+        from .authenticated_resolutions import install_routes as resolution_routes
+        resolution_routes(app)
 
     if approvals_demo:
         from .approval_web import install_routes
@@ -268,6 +308,7 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
 
     @app.get('/')
     async def index():
+        if user_auth:return {'mode':'authenticated-user-api','authenticated_dispatch':True,'frontend_login_connected':False,'identity_endpoint':'/api/me'}
         return FileResponse(ROOT / 'frontend/index.html')
 
     from .telemetry import TraceHTTP
@@ -286,12 +327,15 @@ def main():
     parser.add_argument('--port', type=int, default=8000)
     parser.add_argument('--db', type=Path, default=ROOT / 'data/runtime/harness.sqlite3')
     parser.add_argument('--approvals-demo',action='store_true',help='M4 local con dos identidades ficticias; solo loopback/PostgreSQL.')
+    parser.add_argument('--user-auth',action='store_true',help='API de lecturas con credencial de usuario, loopback y schema separado.')
     parser.add_argument('--write-worker',action='store_true',help='Encolar envíos M4 para un worker independiente.')
     args = parser.parse_args()
+    if args.user_auth and (args.host!='127.0.0.1' or args.storage!='postgres' or args.approvals_demo):
+        parser.error('--user-auth requiere PostgreSQL/loopback y no admite --approvals-demo.')
     if args.write_worker and not args.approvals_demo:parser.error('--write-worker requiere --approvals-demo')
     if args.approvals_demo and (args.host != '127.0.0.1' or args.storage != 'postgres'):
         parser.error('El modo M4 demo requiere --storage postgres y bind local 127.0.0.1.')
-    uvicorn.run(create_app(args.db, storage=args.storage,approvals_demo=args.approvals_demo,write_worker=args.write_worker), host=args.host, port=args.port, workers=1, access_log=False)
+    uvicorn.run(create_app(args.db, storage=args.storage,approvals_demo=args.approvals_demo,write_worker=args.write_worker,user_auth=args.user_auth), host=args.host, port=args.port, workers=1, access_log=False)
 
 
 if __name__ == '__main__':

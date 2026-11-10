@@ -7,7 +7,16 @@ from .proposals import digest,ProposalStore
 
 
 class Resolutions:
-    def __init__(self,operations):self.ops=operations;self.runs=operations.runs
+    def __init__(self,operations,*,reviewer_resolver=None,on_confirm=None):
+        self.ops=operations;self.runs=operations.runs
+        self.reviewer_resolver,self.on_confirm=reviewer_resolver,on_confirm
+
+    def _reviewer(self,operator,reviewer):
+        current=(self.reviewer_resolver(reviewer.actor_id,reviewer.workspace_id) if self.reviewer_resolver
+            else self.ops.principals.get(reviewer.actor_id))
+        if (current!=reviewer or 'approver' not in reviewer.roles or reviewer.actor_id==operator.actor_id
+                or reviewer.workspace_id!=operator.workspace_id):raise ContractError('FORBIDDEN')
+        ProposalStore._grant(reviewer)
 
     @staticmethod
     def _view(row,current_version):
@@ -53,12 +62,10 @@ class Resolutions:
     def confirm(self,identifier,operator,reviewer,*,payload_hash,expected_version):
         if type(expected_version) is not int or expected_version<0 or type(payload_hash) is not str:
             raise ContractError('INVALID_ARGUMENT')
-        if (self.ops.principals.get(reviewer.actor_id)!=reviewer or 'approver' not in reviewer.roles
-                or reviewer.actor_id==operator.actor_id or reviewer.workspace_id!=operator.workspace_id):
-            raise ContractError('FORBIDDEN')
-        ProposalStore._grant(reviewer)
+        self._reviewer(operator,reviewer)
         with self.runs._database() as db:
             op,proposal=self.ops._load(db,identifier,operator)
+            self._reviewer(operator,reviewer)
             row=db.execute('SELECT * FROM operation_resolutions WHERE operation_id=%s FOR UPDATE',(op['operation_id'],)).fetchone()
             if row is None:raise ContractError('NOT_FOUND')
             view=self._view(row,op['version'])
@@ -77,8 +84,10 @@ class Resolutions:
             if observed!=proof:raise ContractError('CONFLICT')
             status='SUCCEEDED' if proof['receipt'] is not None else 'NOT_APPLIED'
             if payload['conclusion']!=status:raise ContractError('CORRUPT_STATE')
+            self._reviewer(operator,reviewer)
             db.execute('''UPDATE operation_resolutions SET status='CONFIRMED',version=version+1,
                 reviewed_by=%s,reviewed_at=clock_timestamp() WHERE operation_id=%s''',(reviewer.actor_id,op['operation_id']))
             self.ops._transition(db,op,status,reviewer,receipt=proof['receipt'],code='MANUAL_PROVIDER_CLOSURE')
+            if self.on_confirm:self.on_confirm(db,op,status)
             row=db.execute('SELECT * FROM operation_resolutions WHERE operation_id=%s',(op['operation_id'],)).fetchone()
             return self._view(row,op['version']+1)

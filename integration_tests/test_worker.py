@@ -16,6 +16,7 @@ from harness.core import Limits
 from harness.postgres_config import local_dsn
 from harness.postgres_store import PostgresRunStore
 from harness.worker import Worker
+from lease_wait import wait_for_expired_job
 
 ROOT = Path(__file__).parents[1]
 
@@ -142,12 +143,12 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_worker_death_recovers_in_another_process_after_expiration(self):
         run = self.enqueue('mcp-devops-ci-v2:stale')
         command = [sys.executable, '-m', 'harness.worker', '--schema', self.schema, '--once']
-        crashed = subprocess.run(command + ['--lease-seconds', '0.5', '--crash-at', 'after-result'],
+        crashed = subprocess.run(command + ['--lease-seconds', '5', '--crash-at', 'after-result'],
                                  cwd=ROOT, capture_output=True, text=True, timeout=20)
-        self.assertEqual(crashed.returncode, 2, crashed.stderr)
+        self.assertEqual(crashed.returncode, 2, crashed.stdout+crashed.stderr)
         before = self.store.load(run.run_id, self.identity)
         self.assertEqual(len(before.results), 1)
-        await asyncio.sleep(0.6)
+        await asyncio.to_thread(wait_for_expired_job,self.store,run.run_id)
         recovered = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=20)
         self.assertEqual(recovered.returncode, 0, recovered.stderr)
         after = self.store.load(run.run_id, self.identity)
@@ -159,11 +160,11 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_pending_read_after_process_death_preserves_call_id_and_charges_attempt(self):
         run = self.enqueue('mcp-devops-ci-v2:matching')
         command = [sys.executable, '-m', 'harness.worker', '--schema', self.schema, '--once']
-        crashed = subprocess.run(command + ['--lease-seconds', '0.5', '--crash-at', 'before-tool', '--tool', 'jenkins_get_build'],
+        crashed = subprocess.run(command + ['--lease-seconds', '5', '--crash-at', 'before-tool', '--tool', 'jenkins_get_build'],
                                  cwd=ROOT, capture_output=True, text=True, timeout=20)
-        self.assertEqual(crashed.returncode, 2, crashed.stderr)
+        self.assertEqual(crashed.returncode, 2, crashed.stdout+crashed.stderr)
         before = self.store.load(run.run_id, self.identity)
-        await asyncio.sleep(0.6)
+        await asyncio.to_thread(wait_for_expired_job,self.store,run.run_id)
         recovered = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=20)
         self.assertEqual(recovered.returncode, 0, recovered.stderr)
         after = self.store.load(run.run_id, self.identity)

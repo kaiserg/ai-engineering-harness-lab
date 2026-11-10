@@ -1,8 +1,8 @@
 # Etapa 2 — Arquitectura del harness DevOps
 
-> **Estado actualizado:** el recorrido de lectura usa modelo y backends DevOps simulados. PostgreSQL/API/workers, Jira MCP Streamable HTTP con identidad de servicio/TLS, rotación y observabilidad funcionan en local. M4a–M4h incluyen propuestas/aprobaciones, ledger, despacho MCP, frontend, cierre revisado, worker de escrituras, trazas/métricas y ocho evaluaciones deterministas. Siguen pendientes identidad de usuarios y aislamiento operativo completos, RAG M5 y proveedores/LLM reales de M7. Ver [la matriz de cierre](docs/status.md) y [la guía](docs/guide.md) para evidencia y límites.
+> **Estado actualizado:** el recorrido de lectura usa modelo y backends DevOps simulados. PostgreSQL/API/workers, Jira MCP Streamable HTTP con identidad de servicio/TLS, rotación y observabilidad funcionan en local. M4a–M4h incluyen propuestas/aprobaciones, ledger, despacho MCP, frontend, cierre revisado, worker de escrituras, trazas/métricas y ocho evaluaciones deterministas. M3d1–M3d5 conectan identidad local, lecturas, aprobaciones, envío por servicio, recuperación y cierre manual autenticados en un schema separado. El cierre previo a M5 incorpora cuatro evaluaciones autenticadas y un checkpoint local. El próximo hito funcional es conocimiento/RAG; login web/OIDC, aislamiento operativo completo y proveedores/LLM reales de M7 siguen pendientes. Ver [la matriz de cierre](docs/status.md) y [la guía](docs/guide.md) para evidencia y límites.
 
-**Estado:** arquitectura objetivo y camino incremental; el avance implementado hasta M4h se distingue en la nota anterior. Leer primero [alcance](01-alcance-y-escenarios.md); complementar con [amenazas](03-modelo-de-amenazas.md) y [contratos](04-contratos-y-estados.md).
+**Estado:** arquitectura objetivo y camino incremental; el avance implementado se distingue en la nota anterior. Leer primero [alcance](01-alcance-y-escenarios.md); complementar con [amenazas](03-modelo-de-amenazas.md) y [contratos](04-contratos-y-estados.md).
 
 ## 1. Decisión principal
 

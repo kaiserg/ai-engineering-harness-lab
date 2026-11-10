@@ -1,0 +1,111 @@
+[
+  {
+    "id": "AUTH-approved",
+    "scenario": "approved",
+    "expected": {
+      "operation": "SUCCEEDED",
+      "job": "DONE",
+      "effects": 1,
+      "calls": {
+        "revision": 1,
+        "request": 1,
+        "lookup": 0,
+        "close": 0
+      },
+      "events": [
+        "PREPARED",
+        "DISPATCHING",
+        "SUCCEEDED"
+      ],
+      "review": null,
+      "code": null,
+      "last_actor": "service:write-worker",
+      "claims_range": [
+        1,
+        1
+      ]
+    }
+  },
+  {
+    "id": "AUTH-revoked-before-send",
+    "scenario": "revoked-before-send",
+    "expected": {
+      "operation": "NOT_APPLIED",
+      "job": "DONE",
+      "effects": 0,
+      "calls": {
+        "revision": 1,
+        "request": 0,
+        "lookup": 0,
+        "close": 0
+      },
+      "events": [
+        "PREPARED",
+        "NOT_APPLIED"
+      ],
+      "review": null,
+      "code": "FORBIDDEN",
+      "last_actor": "service:write-worker",
+      "claims_range": [
+        1,
+        1
+      ]
+    }
+  },
+  {
+    "id": "AUTH-recovery-revoked",
+    "scenario": "recovery-revoked",
+    "expected": {
+      "operation": "SUCCEEDED",
+      "job": "DONE",
+      "effects": 1,
+      "calls": {
+        "revision": 1,
+        "request": 1,
+        "lookup": 1,
+        "close": 0
+      },
+      "events": [
+        "PREPARED",
+        "DISPATCHING",
+        "UNKNOWN",
+        "SUCCEEDED"
+      ],
+      "review": null,
+      "code": null,
+      "last_actor": "service:write-worker",
+      "claims_range": [
+        2,
+        5
+      ]
+    }
+  },
+  {
+    "id": "AUTH-manual-closure",
+    "scenario": "manual-closure",
+    "expected": {
+      "operation": "NOT_APPLIED",
+      "job": "DONE",
+      "effects": 0,
+      "calls": {
+        "revision": 1,
+        "request": 0,
+        "lookup": 1,
+        "close": 2
+      },
+      "events": [
+        "PREPARED",
+        "DISPATCHING",
+        "UNKNOWN",
+        "NOT_APPLIED"
+      ],
+      "review": "CONFIRMED",
+      "code": "MANUAL_PROVIDER_CLOSURE",
+      "last_actor": "approver-demo",
+      "claims_range": [
+        2,
+        5
+      ]
+    }
+  }
+]

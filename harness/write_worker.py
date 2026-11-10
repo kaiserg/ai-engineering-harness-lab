@@ -19,6 +19,8 @@ from .write_queue import WriteQueue
 
 class WriteWorker:
     def __init__(self,operations,identity,*,worker_id=None,lease_seconds=15,crash_at=None):
+        if operations.runs.schema=='harness_users_lab' and getattr(operations,'service_execution',False) is not True:
+            raise ValueError('El despacho autenticado no está habilitado en este incremento.')
         if type(lease_seconds) not in (int,float) or not 2<=lease_seconds<=60:raise ValueError('Lease inválido')
         if crash_at not in (None,'after-claim','after-send'):raise ValueError('Punto de fallo inválido')
         self.ops,self.identity,self.queue=operations,identity,WriteQueue(operations)
@@ -61,8 +63,7 @@ class WriteWorker:
             if not await asyncio.to_thread(self.queue.renew,claim,self.lease_seconds):return
 
     def _execute(self,claim):
-        bound=Operations(self.ops.proposals,self.ops.provider,self.ops.principals,
-            guard=lambda db:self.queue.guard(db,claim))
+        bound=self.ops.with_guard(lambda db:self.queue.guard(db,claim))
         try:
             current=bound.get(claim.operation_id,self.identity)
             if current['status']=='PREPARED':
@@ -102,6 +103,7 @@ async def main():
     parser.add_argument('--once',action='store_true')
     parser.add_argument('--crash-at',choices=['after-claim','after-send'])
     args=parser.parse_args()
+    if args.schema=='harness_users_lab':parser.error('El worker de fixtures no procesa escrituras autenticadas.')
     if args.crash_at and not args.once:parser.error('--crash-at requiere --once')
     operator,approver=fixture_identity('operator'),fixture_identity('approver')
     ops=Operations(ProposalStore(PostgresRunStore(local_dsn(),schema=args.schema)),MCPJenkinsWrite(operator,args.provider_db),

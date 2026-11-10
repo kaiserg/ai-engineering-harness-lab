@@ -34,11 +34,14 @@ class CheckedTool:
 
 
 class Worker:
-    def __init__(self, store, *, identity=None, worker_id=None, lease_seconds=15, composer=compose, checkpoint_hook=None):
+    def __init__(self, store, *, identity=None, worker_id=None, lease_seconds=15, composer=compose, checkpoint_hook=None, identity_resolver=None):
+        if store.schema=='harness_users_lab' and identity_resolver is None:
+            raise ValueError('El schema de usuarios requiere resolución de identidad vigente.')
         store._duration(lease_seconds)
         self.store, self.identity = store, identity or demo_identity()
         self.worker_id, self.lease_seconds = worker_id or 'worker-' + str(uuid4()), lease_seconds
         self.composer, self.checkpoint_hook = composer, checkpoint_hook
+        self.identity_resolver=identity_resolver
 
     async def run_once(self):
         claim = self.store.claim_next(self.worker_id, self.identity, lease_seconds=self.lease_seconds)
@@ -94,7 +97,12 @@ class Worker:
 
     async def _execute_claim(self, claim):
         bound = self.store.bind(claim)
-        check = lambda: self.store.assert_claim(claim, self.identity)
+        identity=self.identity
+        def check():
+            self.store.assert_claim(claim,self.identity)
+            if self.identity_resolver is not None:
+                current=self.identity_resolver()
+                if current!=identity:raise ContractError('FORBIDDEN')
         pause = pause_hook(claim.pause_at)
         def checkpoint(point, run):
             check()
@@ -102,18 +110,22 @@ class Worker:
                 self.checkpoint_hook(point, run)
             pause(point, run)
         try:
+            if self.identity_resolver is not None:
+                identity=self.identity_resolver()
+                if ((identity.actor_id,identity.workspace_id)!=(self.identity.actor_id,self.identity.workspace_id)
+                        or not identity.roles & {'reader','operator'}):raise ContractError('FORBIDDEN')
             if claim.attempts > claim.max_attempts:
                 raise ContractError('WORKER_ATTEMPTS_EXCEEDED')
-            run = bound.load(claim.run_id, self.identity)
+            run = bound.load(claim.run_id, identity)
             annotate(**{'run.confirmed_results':len(run.results)})
             limits = Limits(**run.limits_snapshot) if run.limits_snapshot else Limits()
-            execution = self.composer(run.execution_profile, self.identity, bound,
+            execution = self.composer(run.execution_profile, identity, bound,
                                       limits=limits, checkpoint_hook=checkpoint)
             harness = execution.harness
             harness.llm = CheckedModel(harness.llm, check)
             harness.tools = {name: CheckedTool(tool, check) for name, tool in harness.tools.items()}
             # Reautorizar y recuperar cualquier checkpoint, incluyendo QUEUED y terminales.
-            result = await harness.resume(run.run_id, self.identity)
+            result = await harness.resume(run.run_id, identity)
             self.store.finish_terminal(claim, self.identity)
             annotate(**{'run.model_calls':result.model_calls,'run.tool_calls':result.tool_calls})
             if result.outcome_code:
@@ -150,13 +162,20 @@ async def main(args):
     from .metrics import start
     start()
     store = PostgresRunStore(local_dsn(), schema=args.schema)
+    user_scope=None;resolver=None
+    if args.user_actor:
+        from .user_identity import UserIdentityStore
+        from .contracts import Identity
+        directory=UserIdentityStore(PostgresRunStore(local_dsn()))
+        user_scope=Identity(args.user_actor,args.user_workspace,frozenset(),frozenset())
+        resolver=lambda:directory.resolve(args.user_actor,args.user_workspace)
     def crash(point, run):
         if (args.crash_at == point
                 and (point != 'after-result' or len(run.results) == args.after_results)
                 and (point != 'before-tool' or args.tool is None or run.pending_call.name == args.tool)):
             print(json.dumps({'event': 'simulated_crash', 'run_id': run.run_id, 'checkpoint': run.checkpoint}), flush=True)
             os._exit(2)  # Solo simulación explícita: no ejecutar cleanup para probar recuperación real.
-    worker = Worker(store, worker_id=args.worker_id, lease_seconds=args.lease_seconds, checkpoint_hook=crash)
+    worker = Worker(store, worker_id=args.worker_id, lease_seconds=args.lease_seconds, checkpoint_hook=crash,identity=user_scope,identity_resolver=resolver)
     stopping = asyncio.Event()
     asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, stopping.set)
     print(json.dumps({'event': 'worker_ready', 'worker_id': worker.worker_id}), flush=True)
@@ -176,13 +195,19 @@ async def main(args):
 def cli():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--once', action='store_true')
-    parser.add_argument('--schema', default='harness_lab')
+    parser.add_argument('--schema')
+    parser.add_argument('--user-actor')
+    parser.add_argument('--user-workspace')
     parser.add_argument('--worker-id')
     parser.add_argument('--lease-seconds', type=float, default=15)
     parser.add_argument('--crash-at', choices=['after-result', 'before-tool'])
     parser.add_argument('--after-results', type=int, choices=[1, 2, 3], default=1)
     parser.add_argument('--tool', choices=['jira_get_issue', 'github_get_pull_request', 'jenkins_get_build'])
     args = parser.parse_args()
+    if bool(args.user_actor)!=bool(args.user_workspace):parser.error('Indique --user-actor y --user-workspace juntos.')
+    args.schema=args.schema or ('harness_users_lab' if args.user_actor else 'harness_lab')
+    if args.user_actor and args.schema=='harness_lab' or not args.user_actor and args.schema=='harness_users_lab':
+        parser.error('Separe el schema de runs autenticados del worker de fixtures.')
     try:
         asyncio.run(main(args))
     except KeyboardInterrupt:

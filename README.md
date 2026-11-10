@@ -354,3 +354,67 @@ uv run python scripts/evaluate_writes.py
 ```
 
 Requiere PostgreSQL local y el binario MCP Go de lectura construido. Ejecuta ocho escenarios en schemas/proveedores temporales: aprobación, rechazo, vencimiento, cambio de revisión, permisos retirados, pérdida de respuesta, recuperación y cierre manual. Compara estados, eventos, llamadas MCP y efectos; un SUCCEEDED con reenvío falla. No requiere API, worker de la app ni API keys. Reporte ignorado: `data/runtime/evals/writes-latest.json`; código de salida 1 si algo falla. Ver [guía, sección 38](docs/guide.md#m4h-evaluaciones-deterministas-de-escrituras) para las decisiones, criterios, aislamiento y límites.
+
+### M3d1 primera frontera de identidad
+
+```bash
+uv run python scripts/users.py bootstrap
+uv run python -m harness.user_identity_api
+# En otra terminal:
+uv run python scripts/users.py issue --actor reader-demo --workspace workspace-alpha
+uv run python scripts/users.py whoami UUID_DE_SESION
+uv run python scripts/users.py revoke UUID_DE_SESION
+```
+
+Requiere PostgreSQL local. API de comprobación: `GET http://127.0.0.1:8004/api/me`. Credenciales opacas de una hora, hash en PostgreSQL, archivos privados en runtime, roles y pertenencia vigentes del servidor. **Esta frontera aún no está conectada a las consolas 8002/8003**, que conservan sus fixtures. Emisión administrativa por CLI local; no hay login web/OIDC ni emisión pública de usuarios. Ver [guía, sección 39](docs/guide.md#m3d1-frontera-de-identidad-de-usuarios-y-workspace).
+
+### M3d2 runs de lectura autenticados
+
+```bash
+uv run python -m harness.web --storage postgres --user-auth --port 8005
+# Otra terminal:
+uv run python -m harness.worker --user-actor reader-demo --user-workspace workspace-alpha
+# Con el session ID emitido por scripts/users.py:
+uv run python scripts/user_runs.py --session UUID_DE_SESION start --pause-at jira
+uv run python scripts/user_runs.py --session UUID_DE_SESION status UUID_DEL_RUN
+uv run python scripts/user_runs.py --session UUID_DE_SESION resume UUID_DEL_RUN
+```
+
+Los runs autenticados usan `harness_users_lab`, separado de los fixtures de las consolas 8002/8003; el directorio sigue en `harness_lab`. API por petición y worker antes del I/O resuelven permisos actuales. Revocar la sesión bloquea HTTP, mientras una intención admitida depende de los permisos vigentes del solicitante. API/CLI sin login web todavía; M4 autenticado será el siguiente incremento. Ver [guía, sección 40](docs/guide.md#m3d2-lecturas-autenticadas-ownership-y-cola).
+
+### M3d3 propuestas y aprobación por usuario autenticado
+
+La API 8005 permite proponer sobre un run propio, revisar con una credencial approver del mismo workspace, decidir sobre el hash/versión exactos y preparar una operación única. `decided_by` viene de la sesión; la autoaprobación se rechaza incluso con ambos roles. Antes de consumir, se revalidan los permisos del solicitante y del aprobador. Cliente: `scripts/user_proposals.py --session UUID inbox|propose|review|decide|prepare|operation`; ver sintaxis y ejemplos en la [guía, sección 41](docs/guide.md#m3d3-propuestas-y-aprobaciones-con-identidad-autenticada).
+
+El recorrido termina en CONSUMED/PREPARED, con cero jobs/envíos. El despacho autenticado permanece deshabilitado hasta conectar la autoridad de ejecución/recuperación del servicio; el M4 anterior en 8003 conserva su modo de desarrollo. Login web/OIDC sigue pendiente.
+
+### M3d4 envío autenticado por servicio y recuperación
+
+```bash
+uv run python -m harness.user_write_worker --actor reader-demo --workspace workspace-alpha
+# Con una operación aprobada/preparada y la sesión del dueño:
+uv run python scripts/user_proposals.py --session UUID_DE_SESION dispatch UUID_DE_OPERACION --interrupt after-send
+uv run python scripts/user_proposals.py --session UUID_DE_SESION operation UUID_DE_OPERACION
+```
+
+La API admite con 202 sin enviar; el servicio usa el mismo job/ledger con heartbeat/fencing. Antes del primer request revalida solicitante, aprobador, plazo y evidencia. Para confirmar/consultar un efecto ya enviado usa autoridad de servicio limitada al dueño/workspace, incluso tras retirar permisos, y nunca reenvía UNKNOWN. El historial identifica `service:write-worker`. Sin recibo queda NEEDS_REVIEW; el cierre manual autenticado es el siguiente incremento. Ver [guía, sección 42](docs/guide.md#m3d4-cola-y-worker-de-escrituras-autenticadas). No hay Jenkins real ni login web/OIDC.
+
+### M3d5 cierre manual autenticado de UNKNOWN
+
+Con un job NEEDS_REVIEW y la operación UNKNOWN, el dueño prepara el cierre y otro actor approver revisa/confirma su hash y versión:
+
+```bash
+uv run python scripts/user_proposals.py --session SESION_OPERADOR prepare-resolution UUID_DE_OPERACION
+uv run python scripts/user_proposals.py --session SESION_APROBADOR resolution UUID_DE_OPERACION
+uv run python scripts/user_proposals.py --session SESION_APROBADOR confirm-resolution UUID_DE_OPERACION --payload-hash HASH_REVISADO --version 0
+```
+
+El cierre remoto impide un envío tardío; una búsqueda vacía no basta. Resolución CONFIRMED, ledger terminal y job DONE se guardan juntos, con otro fencing token y auditoría del revisor. Revisa permisos actuales sin exigir que siga habilitado el solicitante de una revisión ya preparada. No toma jobs PENDING/RUNNING ni reenvía. Ver [guía, sección 43](docs/guide.md#m3d5-resolución-manual-autenticada-de-unknown). Después del cierre/regresión autenticada, el próximo hito funcional es M5/RAG.
+
+### Cierre autenticado antes de M5
+
+```bash
+uv run python scripts/evaluate_authenticated.py
+```
+
+Cuatro casos completos por HTTP ASGI, workers y MCP: envío aprobado, revocación antes del envío, recuperación con ambos actores revocados y cierre manual. Schemas/proveedores temporales; no usa sesiones ni historial de la app. Reporte ignorado: `data/runtime/evals/authenticated-latest.json`. Con las líneas base anteriores suma 21 evaluaciones. Ver [guía, sección 44](docs/guide.md#cierre-autenticado-evaluaciones-y-checkpoint-antes-de-m5). El siguiente hito funcional es M5/RAG; login web/OIDC y otros pendientes productivos no bloquean su inicio.

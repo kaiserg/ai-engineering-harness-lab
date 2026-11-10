@@ -47,6 +47,18 @@ Para distinguir lo implementado del diseño objetivo, consultá la [matriz de ci
 
 38. [M4h evaluaciones deterministas de escrituras](#m4h-evaluaciones-deterministas-de-escrituras).
 
+39. [M3d1 frontera de identidad de usuarios y workspace](#m3d1-frontera-de-identidad-de-usuarios-y-workspace).
+
+40. [M3d2 lecturas autenticadas ownership y cola](#m3d2-lecturas-autenticadas-ownership-y-cola).
+
+41. [M3d3 propuestas y aprobaciones con identidad autenticada](#m3d3-propuestas-y-aprobaciones-con-identidad-autenticada).
+
+42. [M3d4 cola y worker de escrituras autenticadas](#m3d4-cola-y-worker-de-escrituras-autenticadas).
+
+43. [M3d5 resolución manual autenticada de UNKNOWN](#m3d5-resolución-manual-autenticada-de-unknown).
+
+44. [Cierre autenticado evaluaciones y checkpoint antes de M5](#cierre-autenticado-evaluaciones-y-checkpoint-antes-de-m5).
+
 ## M0 y su límite
 
 **Esta sección describe M0 en memoria; la sección M1 al final documenta la persistencia actual.** Construimos una primera ejecución completa con una tool de lectura y un modelo falso. No buscamos una respuesta inteligente: buscamos que las decisiones pasen por controles observables y reproducibles.
@@ -4384,3 +4396,864 @@ Validación M4h: **213 pruebas locales, 104 PostgreSQL, 8/8 evaluaciones de escr
 El checkpoint público reúne el avance local hasta M4h. Para reproducirlo, instalá las dependencias del lockfile, prepará PostgreSQL y el binario Go según el README, y ejecutá `scripts/evaluate.py` y `scripts/evaluate_writes.py`. No se distribuyen bases ni materiales privados: las migraciones y fixtures crean el estado necesario. La [matriz de estado](status.md) registra resultados, pendientes y el alcance de la revisión de publicación.
 
 El siguiente paso continúa con autenticación de usuarios y autorización por workspace. No cambiaremos la identidad de servicio MCP por una identidad enviada libremente desde el navegador; ambos controles cumplen funciones distintas.
+
+## M3d1 frontera de identidad de usuarios y workspace
+
+### Paso 1 separar autenticación de autorización
+
+Hasta M4h la API asigna `reader-demo` y `approver-demo` desde código. Eso sirve para practicar ledger y recuperación, pero no demuestra quién está usando la aplicación.
+
+Autenticar responde «¿qué identidad está presentando esta credencial?». Autorizar responde «¿qué puede hacer esa identidad en este workspace?». El siguiente cambio debe preservar esta separación y el contrato `Identity` que ya conoce el core.
+
+Este primer incremento construye y verifica esa frontera de forma aislada. Añadimos un directorio persistido, credenciales locales y un endpoint `GET /api/me` en el puerto **8004**. Devuelve actor, workspace y permisos resueltos por el servidor. Las APIs/frontend de **8002/8003 siguen usando sus fixtures de desarrollo**; no están protegidas por esta nueva credencial todavía. El endpoint lo declara con `business_routes_connected: false`.
+
+La siguiente parte conectará esa identidad al flujo de negocio. No incorporamos una pantalla que aparente login antes de tener comprobada su frontera de confianza.
+
+### Paso 2 persistir usuarios y pertenencias
+
+`harness/user_identity.py` contiene `UserIdentityStore`, y `harness/migrations/users/001_identity.sql` crea:
+
+| Tabla | Qué guarda |
+| --- | --- |
+| `user_accounts` | Actor y habilitación global. |
+| `user_memberships` | Pertenencia actor/workspace, habilitación, roles y recursos autorizados. |
+| `user_sessions` | ID administrativo, hash de credencial, actor/workspace, creación, vencimiento y revocación. |
+
+La migración usa su propio `user_schema_version=1` y lock transaccional. La versión del core PostgreSQL sigue en 3 y la del módulo de propuestas en 5. No cambiamos runs, operaciones, aprobaciones ni jobs.
+
+El bootstrap explícito crea tres identidades ficticias:
+
+| Actor | Workspace | Roles iniciales |
+| --- | --- | --- |
+| `reader-demo` | `workspace-alpha` | reader, operator |
+| `approver-demo` | `workspace-alpha` | approver |
+| `reader-beta` | `workspace-beta` | reader, operator |
+
+Los recursos iniciales son los fixtures DEV, demo/atlas y atlas-tests. Repetir bootstrap no restaura roles o cuentas deshabilitadas: usa inserciones idempotentes, no un reset de permisos. Su salida confirma preparación, no pretende mostrar los roles actuales.
+
+### Paso 3 usar una credencial sin roles dentro
+
+La emisión genera 32 bytes aleatorios mediante `secrets`, representados como un token opaco con prefijo `hsu_`. El token no contiene actor, roles ni workspace decodificables. La base guarda solamente su SHA-256; el cliente conserva la credencial original para presentarla.
+
+Hash rápido aquí no significa almacenar contraseñas humanas con SHA-256: estamos identificando un secreto aleatorio de 256 bits. No implementamos contraseñas, recuperación de cuenta ni MFA.
+
+El servidor fija un vencimiento absoluto de una hora con el reloj de PostgreSQL. Cada verificación lee la sesión, cuenta y pertenencia vigentes. No usa una caché que mantenga permisos retirados. Revocar una sesión no afecta las otras; deshabilitar la cuenta o pertenencia rechaza todas las credenciales correspondientes.
+
+Esto sigue la separación entre identificador aleatorio y estado mantenido en servidor descrita por [OWASP Session Management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html). Es una credencial educativa administrada localmente; **no es un login OIDC ni un sistema empresarial de identidad completo**. El flujo futuro de autenticación deberá establecer una identidad validada antes de crear/resolver la sesión; no aceptaremos un actor elegido libremente en una API de emisión.
+
+### Paso 4 mantener la emisión en una frontera administrativa
+
+`scripts/users.py` es una CLI local con acceso confiable al PostgreSQL del laboratorio. Puede preparar fixtures, emitir/revocar credenciales y actualizar roles de una pertenencia existente. La API no tiene un endpoint público que emita credenciales al recibir un nombre.
+
+Quien puede ejecutar esa CLI y usar las credenciales de administración local está dentro de la frontera de confianza del laboratorio. Esto no sustituye roles de administración independientes, auditoría empresarial o un IdP. No lo confundimos con autenticar a usuarios remotos.
+
+El token se escribe en `data/runtime/user-sessions/<session_id>.json`, con permiso 0600; el directorio nuevo se crea con 0700. No aparece en stdout, argumentos de shell, query string ni `.env`. El archivo se crea de forma exclusiva y sin seguir enlaces simbólicos. Si falla la escritura, se intenta revocar la sesión recién emitida antes de devolver error.
+
+El ID administrativo sí puede mostrarse y usarse para revocar; no funciona como credencial. Todos los archivos de runtime ya están ignorados por Git y contienen material privado generado.
+
+### Paso 5 comprobar identidad por HTTP local
+
+`harness/user_identity_api.py` expone únicamente la comprobación de identidad. El cliente presenta `Authorization: Bearer ...`; la respuesta se construye desde `Identity`, no desde headers de actor/rol ni desde parámetros enviados por el navegador.
+
+| Situación | Respuesta |
+| --- | --- |
+| Credencial válida y vigente | 200, identidad y permisos actuales. |
+| Ausente, falsificada, vencida, revocada o cuenta/pertenencia deshabilitada | 401, UNAUTHENTICATED. |
+| Credencial válida pero `X-Harness-Workspace` no coincide con su workspace | 403, FORBIDDEN. |
+| Parámetros extra en la URL autenticada | 422, INVALID_REQUEST. |
+| PostgreSQL no disponible o error inesperado | 503, IDENTITY_UNAVAILABLE; sin identidad de respaldo. |
+
+Cada credencial está vinculada a un workspace al emitirse. No se cambia su scope enviando otro header. Si en el futuro un usuario pertenece a varios workspaces, cada selección deberá resolverse con pertenencia validada por el servidor.
+
+Un token de servicio MCP no se acepta como credencial de usuario. La identidad de servicio actual prueba qué proceso llama a otro servicio; esta credencial prueba posesión de un secreto de usuario local. Se conservan como fronteras distintas.
+
+La API solo se inicia en `127.0.0.1`, no habilita CORS ni cookies y devuelve `Cache-Control: no-store`. Desactivamos el access log de este proceso para no registrar URLs de peticiones malformadas. El cliente CLI usa un destino fijo, no sigue redirects y no usa proxies del entorno. HTTP se limita a este ejercicio loopback; no habilitamos despliegue remoto con estas credenciales.
+
+### Paso 6 ejecutar el ejercicio
+
+Desde la raíz, con las dependencias instaladas y PostgreSQL activo:
+
+```bash
+uv run python scripts/postgres.py up
+uv run python scripts/users.py bootstrap
+uv run python -m harness.user_identity_api
+```
+
+Dejá esa terminal abierta. En otra, emití la credencial:
+
+```bash
+uv run python scripts/users.py issue --actor reader-demo --workspace workspace-alpha
+```
+
+La salida incluye `session_id`, `expires_at` y `credential_file`, sin el token. Copiá el session ID y reemplazá `UUID_DE_SESION` en los ejemplos siguientes:
+
+```bash
+uv run python scripts/users.py whoami UUID_DE_SESION
+uv run python scripts/users.py whoami UUID_DE_SESION --workspace workspace-beta
+```
+
+El primero devuelve 200 con reader-demo/workspace-alpha. El segundo devuelve 403 y el comando sale con código 1: es el rechazo esperado. El cliente lee el archivo privado, arma el header y muestra solo la respuesta sanitizada.
+
+Para ver cómo cambian los permisos sin emitir otro token:
+
+```bash
+uv run python scripts/users.py set-membership --actor reader-demo --workspace workspace-alpha --roles reader
+uv run python scripts/users.py whoami UUID_DE_SESION
+```
+
+Ahora solo aparece reader. Restaurá explícitamente el grant para seguir los próximos ejercicios:
+
+```bash
+uv run python scripts/users.py set-membership --actor reader-demo --workspace workspace-alpha --roles reader operator
+```
+
+Esto modifica el directorio nuevo; en este incremento todavía no altera los operadores fijos de la API M4 ni de sus workers. La integración de ambas fronteras es el siguiente trabajo.
+
+Finalmente, revocá y repetí:
+
+```bash
+uv run python scripts/users.py revoke UUID_DE_SESION
+uv run python scripts/users.py whoami UUID_DE_SESION
+```
+
+Debe devolver 401. Repetir la revocación es idempotente. La CLI no borra automáticamente el archivo privado; una credencial revocada ya no sirve y podés retirarla del runtime cuando termine el ejercicio. Para otro usuario de prueba, repetí issue con approver-demo/alpha o reader-beta/beta.
+
+### Paso 7 preservar los controles y probar los rechazos
+
+La verificación devuelve el mismo contrato `Identity` del core. No reescribimos el ledger, no cambiamos los UUID de intención ni los límites y no reiniciamos aprobaciones. La revocación se observa en verificaciones posteriores a su commit; no cancela una petición que ya estaba en curso ni revierte un efecto remoto.
+
+Las pruebas PostgreSQL cubren persistencia/reapertura, solo hash en la base, scope, token falso/de servicio, vencimiento con el reloj de la base, cuenta y pertenencia deshabilitadas, cambio de roles, revocación idempotente e independencia de sesiones. Las pruebas HTTP demuestran que headers de actor/roles no cambian la identidad, que no existe emisión pública ni rutas de negocio y que la respuesta nunca muestra la credencial.
+
+También verificamos permisos 0600, rechazo de sobrescritura/symlink, revocación si falla el archivo, secretos fuera de stdout, cliente sin redirects/proxies y fallo cerrado con 503 cuando no se puede resolver identidad.
+
+```bash
+uv run python -m unittest discover -s tests -p 'test_user_identity.py' -v
+uv run python -m unittest discover -s integration_tests -p 'test_user_identity.py' -v
+uv run python scripts/evaluate.py
+uv run python scripts/evaluate_writes.py
+```
+
+El ejercicio real por HTTP comprobó las tres identidades, rechazos cruzados entre alpha/beta, cambio de roles y revocación. Se revocaron todas las credenciales emitidas para esa verificación. El servidor queda disponible para que emitas las tuyas de prueba.
+
+### Paso 8 siguiente conexión y límites pendientes
+
+El siguiente incremento conectará identidad verificada y permisos vigentes a las rutas de lectura, ownership y cola. Después adaptaremos la aprobación para que el aprobador sea el usuario autenticado, conservando dos actores y evidencia/ledger. Deberemos revisar también cómo el worker obtiene y revalida permisos actuales del solicitante antes del I/O.
+
+Quedan pendientes login web/OIDC, cookies de sesión, renovación, MFA, permisos administrativos separados, acceso autorizado a observabilidad y operación multiusuario completa. En este paso no se protege retroactivamente la consola M4 por levantar el puerto 8004; ambas rutas siguen claramente separadas.
+
+Validación M3d1: **216 pruebas locales, 111 PostgreSQL, 8/8 evals de escritura y 9/9 de lectura aprobadas**. Se verificó HTTP real con tres identidades, rechazo cross-workspace, cambios de roles y revocación; todas las credenciales del ejercicio quedaron revocadas. No quedaron schemas de pruebas de identidad, trabajos de escritura pendientes/activos ni operaciones inciertas. Se conservan los monitores/servicios anteriores y no se repitieron suites Compose/rotación. Gitleaks no encontró secretos en los archivos nuevos/modificados publicables; runtime y credenciales siguen excluidos.
+
+## M3d2 lecturas autenticadas ownership y cola
+
+### Paso 1 conectar la identidad al recorrido de lecturas
+
+M3d1 verificaba credenciales en un endpoint aislado. M3d2 conecta esa verificación con crear, listar, consultar y recuperar runs. La API se inicia con `--user-auth`; sin credencial no entra al productor de jobs.
+
+En cada petición a `/api/`, el servidor resuelve la credencial contra `UserIdentityStore`. Las rutas de runs requieren rol reader u operator. Actor y workspace se toman del resultado validado; no se aceptan en el body ni se adjudican desde headers de roles.
+
+`PostgresRunService` se construye por petición con esa identidad, sin compartir un objeto mutable de usuario entre peticiones. Reutilizamos las consultas existentes del store: filtran por **actor y workspace**, no solo por conocer un UUID.
+
+| Petición | Resultado esperado |
+| --- | --- |
+| Sin credencial, vencida o revocada | 401 antes de admitir trabajo. |
+| Usuario válido sin rol de lectura | 403. |
+| Solicita otro workspace con su credencial actual | 403. |
+| Pide un run de otro actor o workspace | 404; no se confirma si existe. |
+| Incluye `actor_id` u otros campos desconocidos en start | 422. |
+| Directorio de identidad no disponible | 503 sin volver a la identidad de desarrollo. |
+
+Esta aplicación de los controles en cada petición sigue el criterio de [OWASP Authorization](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html). La sesión demuestra identidad; ownership y política siguen determinando qué puede leer o ejecutar.
+
+### Paso 2 separar el almacenamiento del modo de desarrollo
+
+Las consolas anteriores asignan identidades fijas. Si compartieran los nuevos runs, un visitante de esas consolas podría ver trabajo cuyo dueño lógico coincidiera con el fixture. Por eso no basta con añadir autenticación a otro puerto usando el mismo historial.
+
+| Componente | Puerto/schema por defecto | Modo |
+| --- | --- | --- |
+| Consola Compose | 8002 / harness_lab | Fixtures existentes. |
+| Consola M4 | 8003 / harness_lab | Aprobaciones/escrituras de desarrollo. |
+| Comprobación M3d1 | 8004 / directorio en harness_lab | Identidad, sin runs. |
+| API M3d2 | 8005 / harness_users_lab | Lecturas con credencial de usuario. |
+
+El directorio de cuentas/sesiones sigue centralizado en harness_lab. Los runs/jobs autenticados se guardan en harness_users_lab, creado con las migraciones normales. La API no admite `--user-auth` con el schema de fixtures ni junto con `--approvals-demo`. El schema reservado de usuarios tampoco se puede abrir con la API o el worker de fixtures sin resolución de identidad.
+
+No se copian ni se borran runs anteriores; el historial de desarrollo no se convierte automáticamente en historial autenticado. Es una separación del laboratorio mediante schemas y modos explícitos, no PostgreSQL RLS ni aislamiento de administradores con acceso directo a la base. La CLI/credenciales locales de administración siguen siendo una frontera confiable.
+
+### Paso 3 configurar qué actor y workspace atiende un worker
+
+El worker recibe `--user-actor` y `--user-workspace` desde su configuración local confiable. Eso selecciona la partición de jobs que puede reclamar; no concede roles. Sus permisos efectivos se consultan en el directorio al comenzar **cada reclamo**.
+
+Agregamos `UserIdentityStore.resolve(actor, workspace)`. A diferencia de authenticate, no usa un token del cliente: obtiene pertenencia/cuenta habilitadas y permisos actuales para una intención durable ya admitida. Antes de ejecutar, verifica que la identidad devuelta coincida con actor/workspace del worker y tenga rol de lectura.
+
+Se conserva `Worker`, `claim_next`, heartbeat, fencing y los stores ya probados. No introducimos un segundo core ni un consumidor que cambie de identidad global mientras procesa varias solicitudes. Para el laboratorio usamos un worker explícito por actor/workspace; un dispatcher multiusuario administrado será otro incremento operativo.
+
+### Paso 4 revalidar antes del I/O
+
+El worker existente ya envolvía modelo y herramientas para comprobar el lease. Extendemos esa misma comprobación:
+
+1. Confirmar que el reclamo sigue vigente y pertenece al worker.
+2. Resolver la pertenencia actual del solicitante en el directorio.
+3. Compararla con la identidad fijada para ese intento.
+4. Solo continuar si no cambió; el core conserva sus validaciones por herramienta y recurso.
+
+Se comprueba en checkpoints y justo antes de invocar modelo/herramienta. Si una pertenencia se deshabilita o cambian sus grants, el intento falla de forma conservadora con FORBIDDEN. No mezclamos permisos nuevos con decisiones calculadas bajo los anteriores. El siguiente reclamo obtiene nuevamente los permisos actuales, sin exigir reiniciar el proceso del worker.
+
+La prueba de revocación en `before-tool` demuestra cero invocaciones reales a Jira. La reserva de herramienta ya realizada se conserva: el contador puede ser uno aunque la llamada no haya salido. No borramos reservas para presentar un consumo artificialmente menor ni reiniciamos límites.
+
+Resolver permisos no elimina todas las carreras con un servicio remoto: un cambio posterior a la última comprobación no cancela I/O que ya empezó. No prometemos revocación retroactiva ni atomicidad distribuida. Los efectos de escritura conservan su ledger/corte remoto y todavía no se conectan a este modo.
+
+### Paso 5 distinguir sesión de intención durable
+
+Revocar o dejar vencer la credencial impide nuevas peticiones HTTP. **No cancela por sí mismo un run ya admitido.** El worker no necesita la credencial del navegador para continuar: revalida cuenta/pertenencia y permisos del solicitante.
+
+Esto evita que cerrar una sesión, perder el cliente o llegar a su vencimiento se interprete como rollback o cancelación del trabajo. Para impedir nuevos accesos del usuario y su I/O pendiente, se deshabilita la cuenta/pertenencia o se retiran los permisos; el worker lo detecta en sus comprobaciones posteriores. Una orden explícita de cancelación de trabajo sigue siendo un contrato distinto.
+
+No guardamos el token, hash de sesión ni session ID en runs/jobs. Actor/workspace y el estado de ejecución bastan para el procesamiento; la autenticación del cliente no se convierte en una credencial de servicio MCP.
+
+### Paso 6 iniciar API y worker
+
+Con PostgreSQL, dependencias y el binario MCP Go preparados, en una terminal:
+
+```bash
+uv run python -m harness.web --storage postgres --user-auth --port 8005
+```
+
+En otra:
+
+```bash
+uv run python -m harness.worker --user-actor reader-demo --user-workspace workspace-alpha
+```
+
+Ambos usan el schema de runs autenticados por defecto. El worker de Compose puede seguir funcionando sobre el schema anterior. Los flags de usuario se usan juntos; los comandos rechazan mezclar por accidente los schemas reservados de ambos modos.
+
+La raíz 8005 informa que esta etapa es una API autenticada, con `frontend_login_connected: false`. La pantalla anterior permanece en 8002/8003. Aún no incorporamos login web, cookies, OIDC ni pegado de tokens en el frontend.
+
+### Paso 7 recorrerlo con un cliente que protege la credencial
+
+Emití una sesión con la CLI de M3d1:
+
+```bash
+uv run python scripts/users.py issue --actor reader-demo --workspace workspace-alpha
+```
+
+Copiá su session ID en lugar de `UUID_DE_SESION`:
+
+```bash
+uv run python scripts/user_runs.py --session UUID_DE_SESION me
+uv run python scripts/user_runs.py --session UUID_DE_SESION start --scenario matching --pause-at jira
+```
+
+El cliente nuevo lee el archivo privado de runtime y envía el token exclusivamente en Authorization. Usa el destino fijo 127.0.0.1:8005, sin proxies ni redirects. En la salida solo aparecen estado HTTP y datos de la aplicación. Los cuerpos contienen escenario/pausa, no actor ni roles.
+
+Con el run ID del segundo comando:
+
+```bash
+uv run python scripts/user_runs.py --session UUID_DE_SESION status UUID_DEL_RUN
+uv run python scripts/user_runs.py --session UUID_DE_SESION resume UUID_DEL_RUN
+uv run python scripts/user_runs.py --session UUID_DE_SESION list
+```
+
+Esperá a que status muestre PAUSED antes de recuperar. El mismo resultado de Jira debe conservarse y el run termina COMPLETED con cuatro decisiones y tres herramientas. Si usás el worker con `--once`, repetí el comando para atender el reclamo posterior a resume.
+
+Para probar aislamiento, emití otra sesión reader-beta/workspace-beta e intentá consultar o recuperar el UUID de alpha: devuelve 404. Beta puede crear/ver sus propios runs, pero los adaptadores DevOps conservan fixtures solo de alpha: al ejecutar con un worker beta, termina FAILED/NOT_FOUND. No ampliamos sus datos ni allowlists para hacer aparecer un resultado exitoso. También hay una prueba con dos lectores distintos del mismo workspace para cubrir ownership por actor.
+
+Para dejar un worker beta disponible:
+
+```bash
+uv run python -m harness.worker --user-actor reader-beta --user-workspace workspace-beta
+```
+
+### Paso 8 probar permisos retirados y recuperación
+
+La prueba automatizada encola un run, cambia el rol del solicitante a approver y luego ejecuta el worker. Debe terminar FAILED/FORBIDDEN con cero decisiones/cero herramientas. Otra prueba retira la pertenencia entre la reserva y la invocación de Jira: conserva la reserva y no despacha.
+
+Si lo practicás manualmente con el worker continuo, puede reclamar antes de que cambies los permisos. Para un ejercicio controlado, dejá el worker apagado, encolá, cambiá el grant y recién entonces iniciá el worker con `--once`. Restaurá los permisos explícitamente al terminar; bootstrap no deshace revocaciones. Un run FAILED por esta política no se vuelve a ejecutar automáticamente al restaurarlos.
+
+El resto de las pruebas verifica credencial ausente, rol insuficiente, workspace/actor incorrectos, campos suplantados, directorio caído y límites/evidencia tras recuperación. Los tests anteriores de fencing, caída de proceso, aprobación y ledger continúan vigentes.
+
+```bash
+uv run python -m unittest discover -s tests -p 'test_authenticated_runs.py' -v
+uv run python -m unittest discover -s integration_tests -p 'test_authenticated_runs.py' -v
+uv run python scripts/evaluate.py
+uv run python scripts/evaluate_writes.py
+```
+
+### Paso 9 evidencia y siguiente conexión
+
+El recorrido HTTP real de alpha pausó tras Jira y se recuperó con la misma evidencia y conteos 4/3. La credencial beta recibió 404 al consultar/recuperar ese run. Su run propio terminó NOT_FOUND en los fixtures sin datos beta. Un run encolado antes de retirar permisos terminó FORBIDDEN con 0/0; tras restaurarlos pudo consultarse su resultado. Revocar la sesión bloqueó nuevas peticiones con 401. Todas las credenciales de esta verificación quedaron revocadas.
+
+La API 8005 y un worker autenticado de alpha quedan disponibles para emitir tu propia sesión y practicar. Las consolas/workers de desarrollo siguen con su modo anterior.
+
+El siguiente incremento conectará propuestas y aprobación con el **usuario autenticado que realmente decide**, evitando que la API asigne automáticamente el aprobador de prueba. También deberá revalidar los permisos del solicitante y del aprobador antes de escribir. Login web/OIDC, UI multiusuario y acceso autorizado a Jaeger siguen pendientes; no declaramos M3/S09 completos.
+
+Validación M3d2: **219 pruebas locales, 119 PostgreSQL, 8/8 evals de escritura y 9/9 de lectura aprobadas**. Incluye ocho integraciones nuevas de lectura autenticada y tres tests de frontera/cliente/configuración; las comprobaciones específicas del schema reservado también pasaron tras añadir el guard. La prueba HTTP real conservó evidencia Jira y conteos 4/3, rechazó acceso cruzado y bloqueó I/O con permisos retirados. No quedaron jobs de lectura activos en ninguno de los dos schemas, schemas de pruebas de esta etapa ni credenciales activas de la verificación. La suite Compose/rotación no se repitió. Gitleaks no encontró secretos; los archivos de credenciales y reportes siguen ignorados.
+
+## M3d3 propuestas y aprobaciones con identidad autenticada
+
+### Paso 1 sustituir al aprobador asignado por la API
+
+La consola M4 de desarrollo usa dos fixtures desde código; una persona podía practicar ambos papeles sin autenticarse. En el modo de usuarios 8005, la decisión ahora pertenece al actor de la **credencial de esa petición**.
+
+El nuevo recorrido permite crear, revisar, aprobar/rechazar y preparar una operación. El despacho autenticado todavía no está habilitado: no se crea un trabajo de escritura ni se acepta `/dispatch`. Cerramos primero la frontera de aprobación; el siguiente incremento conectará el ejecutor de efectos y su autoridad de recuperación.
+
+No confundimos aprobar con enviar. Como referencia de diseño, [OWASP Transaction Authorization](https://cheatsheetseries.owasp.org/cheatsheets/Transaction_Authorization_Cheat_Sheet.html) distingue el control de autorización del control final antes de ejecutar. Aquí seguimos preservando esa separación; las comprobaciones para el despacho autenticado deberán completarse antes de habilitarlo.
+
+### Paso 2 reutilizar las propuestas y el ledger
+
+`harness/authenticated_proposals.py` conecta las rutas nuevas con `ProposalStore` y `Operations`; no define otra máquina de estados. Usa el mismo schema de runs autenticados, `harness_users_lab`, y las migraciones del módulo de propuestas.
+
+Se conservan estos controles:
+
+- Intención inmutable vinculada a actor, workspace, recurso, revisión, evidencia y vencimiento.
+- Request key UUID estable del cliente para repetir una creación sin duplicar la propuesta.
+- Decisión sobre hash y versión exactos, con actor distinto al solicitante.
+- Consumo atómico de una propuesta APPROVED en una operación única PREPARED.
+- Historial del ledger y UUID de la operación conservados entre reintentos.
+
+Las versiones siguen siendo core 3, usuarios 1 y propuestas 5. No cambiamos los presupuestos del run original ni repetimos sus lecturas.
+
+El proveedor de este recorrido usa otra SQLite privada, `data/runtime/jenkins-authenticated-simulator.sqlite3`. Preparar solo consulta su revisión por MCP; no llama `request`. No comparte los efectos ni el estado del simulador anterior de M4 en 8003.
+
+### Paso 3 definir quién puede revisar y decidir
+
+| Acción | Identidad y alcance |
+| --- | --- |
+| Crear propuesta | Operator, sobre un run propio del mismo workspace con evidencia completa. |
+| Ver su propuesta | Solicitante con los grants necesarios. |
+| Revisar propuestas de otros | Approver del mismo workspace y recursos autorizados. |
+| Aprobar/rechazar | Approver autenticado distinto al solicitante, hash/versión exactos. |
+| Preparar la operación | Solicitante operator, con aprobación vigente y permisos actuales de ambos. |
+| Consultar directamente el ledger | Solicitante operator; ownership se mantiene. |
+| Enviar al proveedor | No habilitado en la API autenticada de este incremento. |
+
+La bandeja `GET /api/proposals` muestra hasta veinte propuestas recientes: propias para el operator, o del workspace para un approver con grants. Cada elemento vuelve a pasar por la autorización del store. Otro operator del mismo workspace no obtiene acceso por conocer el UUID.
+
+El approver puede revisar el contenido inmutable de la propuesta: argumentos, revisión, fuentes y referencia/hash de evidencia. Esto no le concede acceso al historial entero de runs de otro actor. Las rutas `/api/runs` mantienen la política de lectura anterior.
+
+Un usuario con roles operator y approver tampoco puede aprobar su propia propuesta. La comparación es por actor persistido, no por el nombre del rol ni por usar una segunda credencial de ese mismo actor.
+
+### Paso 4 comprobar permisos actuales y fallar sin consumir
+
+La API autentica cada petición. Antes de decidir vuelve a resolver los grants del revisor y comprueba que correspondan a la identidad recibida. Para una nueva aprobación, también comprueba que el solicitante siga habilitado como operator y autorizado para el recurso. El rechazo puede cerrar una propuesta cuyo solicitante ya perdió permisos: no concede autoridad para ejecutar.
+
+Al preparar la operación, `Operations` acepta un resolver opcional de principales actuales. En este modo comprueba otra vez al solicitante y obtiene al aprobador real desde el directorio. Después aplica las validaciones existentes de roles, recursos, workspace, actor distinto, plazo, evidencia y revisión.
+
+Si se retiró el rol del aprobador tras APPROVED, preparar devuelve 403: no crea una operación, no consume la aprobación y no consulta MCP. Si el directorio no puede resolver identidad, devuelve 503 y conserva el estado anterior. No usa el aprobador fijo de desarrollo como respaldo.
+
+Los reintentos de una operación ya preparada devuelven la misma intención; eso no amplía el vencimiento ni autoriza un envío futuro sin otra revalidación. La autoridad deberá comprobarse nuevamente antes del efecto, no inferirse de que existe PREPARED.
+
+El resolver es opcional para conservar la compatibilidad de los ejercicios M4 anteriores. El worker conserva ese resolver al construir sus operaciones ligadas al guard; no lo descarta al clonar el servicio. Su ejecutor de fixtures rechaza el schema reservado de usuarios mientras el despacho autenticado siga deshabilitado.
+
+### Paso 5 iniciar el recorrido
+
+Usamos la API y worker de lectura de M3d2:
+
+```bash
+uv run python -m harness.web --storage postgres --user-auth --port 8005
+# En otra terminal:
+uv run python -m harness.worker --user-actor reader-demo --user-workspace workspace-alpha
+```
+
+Emití dos credenciales locales distintas:
+
+```bash
+uv run python scripts/users.py issue --actor reader-demo --workspace workspace-alpha
+uv run python scripts/users.py issue --actor approver-demo --workspace workspace-alpha
+```
+
+Conservá sus IDs como `SESION_OPERADOR` y `SESION_APROBADOR`. Son placeholders de los comandos siguientes, no variables configuradas por el script. Los tokens siguen en archivos 0600 de runtime y no se imprimen. La emisión continúa siendo una operación administrativa local; no agregamos contraseñas ni login web/OIDC.
+
+Con la sesión del operador:
+
+```bash
+uv run python scripts/user_runs.py --session SESION_OPERADOR start --scenario stale
+uv run python scripts/user_runs.py --session SESION_OPERADOR status UUID_DEL_RUN
+```
+
+Esperá COMPLETED antes de crear la propuesta. Este incremento sigue usando backends ficticios y decisiones guionadas; no hace escrituras DevOps reales.
+
+### Paso 6 crear una intención y revisar el contenido
+
+Generá un UUID de request key una sola vez, por ejemplo:
+
+```bash
+uv run python -c 'from uuid import uuid4; print(uuid4())'
+```
+
+Copialo como `UUID_DE_SOLICITUD` y reutilizalo si se pierde la respuesta o repetís el mismo comando:
+
+```bash
+uv run python scripts/user_proposals.py --session SESION_OPERADOR propose UUID_DEL_RUN --request-key UUID_DE_SOLICITUD
+```
+
+La respuesta contiene `proposal_id`, `payload`, `payload_hash`, `version`, `status` y `expires_at`. El actor/requested_by viene de la sesión del operador, no del body. Repetir con la misma request key devuelve la misma propuesta y vencimiento.
+
+Ahora cambiá a la credencial del aprobador:
+
+```bash
+uv run python scripts/user_proposals.py --session SESION_APROBADOR inbox
+uv run python scripts/user_proposals.py --session SESION_APROBADOR review UUID_DE_PROPUESTA
+```
+
+Revisá job, repositorio, revisión, solicitante, workspace, fuentes y plazo dentro del payload. Copiá el hash y la versión de ese contenido revisado. El cliente no hace un GET y una aprobación automática escondidos en un solo comando.
+
+### Paso 7 decidir con la identidad correcta
+
+```bash
+uv run python scripts/user_proposals.py --session SESION_APROBADOR decide UUID_DE_PROPUESTA --decision APPROVED --payload-hash HASH_REVISADO --version 0
+```
+
+Para una propuesta pendiente inicial la versión es cero; usá siempre la que devolvió review. Para rechazar, sustituí APPROVED por REJECTED. El servidor registra `decided_by` desde el usuario autenticado y el momento desde PostgreSQL.
+
+Con la sesión del solicitante, ese mismo intento devuelve 403 aunque tenga ambos roles. Un hash o una versión diferentes devuelven 409; un `actor_id` agregado al body devuelve 422. El cliente devuelve código de salida 1 ante esos rechazos esperados.
+
+Repetir exactamente una decisión ya confirmada conserva el resultado y el actor, sin extender el plazo. Cambiar una aprobación ya registrada por rechazo no es una actualización libre: el conflicto se rechaza.
+
+### Paso 8 consumir una vez y observar el ledger
+
+Volvé a la sesión del operador:
+
+```bash
+uv run python scripts/user_proposals.py --session SESION_OPERADOR prepare UUID_DE_PROPUESTA
+uv run python scripts/user_proposals.py --session SESION_OPERADOR operation UUID_DE_OPERACION
+```
+
+La propuesta queda CONSUMED y la operación PREPARED. Su primer evento registra al solicitante. Repetir prepare devuelve el mismo operation ID; no crea otra intención ni otra autorización.
+
+Un approver que no es el dueño no puede preparar en nombre del solicitante. Puede seguir viendo el resumen de la operación dentro de la propuesta que tiene permiso para revisar, pero no adquiere la capacidad del operador para su ledger.
+
+`dispatch_enabled` y `authenticated_dispatch` permanecen en false. No existe una ruta de envío en este modo: POST `/api/operations/<id>/dispatch` devuelve 404 y la tabla write_jobs continúa vacía. El único I/O MCP de prepare es una lectura de revisión. No uses el worker de fixtures para saltar este límite; su constructor/CLI rechazan el schema reservado de usuarios.
+
+### Paso 9 investigar cambios de permisos y resultados
+
+Las pruebas retiran el rol del aprobador después de APPROVED y verifican que preparar no consume la propuesta. También retiran el rol operator del solicitante antes de aprobar: la aprobación se rechaza, mientras otro actor autorizado puede rechazarla para cerrar la intención.
+
+Si lo practicás, guardá/restaurá explícitamente los grants con `scripts/users.py set-membership`. Bootstrap no los restablece. Revocar una sesión impide seguir usando esa credencial, pero no cambia quién aprobó históricamente ni convierte una propuesta consumida en reutilizable.
+
+Después del ejercicio, revocá las credenciales de prueba:
+
+```bash
+uv run python scripts/users.py revoke SESION_OPERADOR
+uv run python scripts/users.py revoke SESION_APROBADOR
+```
+
+En el recorrido HTTP real se verificó creación idempotente, autoaprobación rechazada, otro workspace sin acceso, hash alterado rechazado, aprobación por approver-demo y denegación de prepare con sus permisos retirados. Tras restaurarlos se consumió una sola propuesta en una operación PREPARED. Quedaron cero jobs y cero solicitudes remotas; la lectura original conservó 4/3 llamadas. Se revocaron todas las credenciales del ejercicio. La operación preparada permanece como evidencia durable del recorrido, todavía sin envío.
+
+### Paso 10 pruebas y siguiente frontera
+
+```bash
+uv run python -m unittest discover -s tests -p 'test_authenticated_proposals.py' -v
+uv run python -m unittest discover -s integration_tests -p 'test_authenticated_proposals.py' -v
+uv run python scripts/evaluate.py
+uv run python scripts/evaluate_writes.py
+```
+
+Los tests cubren dos credenciales, autoaprobación con ambos roles, ownership y workspace, permisos retirados, error del directorio, hash/versión/campos alterados, rechazo persistido, idempotencia y consumo único. Se comprueba que no haya trabajos ni efectos remotos en este modo, y que la CLI envíe solo la decisión/hash/versión revisados sin exponer el token.
+
+El próximo incremento conectará la cola y el worker de escrituras autenticadas. Deberá distinguir autorización vigente para iniciar un efecto de la autoridad del servicio para confirmar o investigar uno ya enviado, incluso si luego se retiran permisos o vence la sesión. Seguiremos usando el ledger para no repetir una escritura incierta. Login web/OIDC, frontend multiusuario y acceso operativo a trazas siguen pendientes.
+
+Validación M3d3: **222 pruebas locales, 126 PostgreSQL, 8/8 evals de escritura y 9/9 de lectura aprobadas**. Siete integraciones nuevas y tres pruebas de frontera/cliente verifican dos credenciales, alcance, permisos actuales, idempotencia y consumo único. La prueba HTTP real dejó una operación PREPARED, cero jobs/envíos y la lectura 4/3 intacta. No quedaron sesiones activas de prueba, schemas temporales de esta etapa ni operaciones inciertas en ambos modos; la intención preparada permanece como evidencia sin despacho. Las suites Compose/rotación no se repitieron. Gitleaks no encontró secretos en los archivos publicables nuevos/modificados; runtime sigue excluido.
+
+## M3d4 cola y worker de escrituras autenticadas
+
+### Paso 1 habilitar admisión sin enviar desde la API
+
+M3d3 terminaba en una operación PREPARED. Ahora el dueño autenticado puede pedir su procesamiento con `POST /api/operations/<id>/dispatch`. La API revalida autoridad y guarda un trabajo único en PostgreSQL, con respuesta **202**. El proveedor no recibe la solicitud durante esa petición HTTP.
+
+Reutilizamos `WriteQueue` y `WriteWorker`: cuota de dieciséis trabajos activos por solicitante/workspace, máximo de cinco reclamos, heartbeat, fencing y la relación única entre job y operación. Repetir una admisión con el mismo punto de fallo devuelve el mismo trabajo; no reinicia contadores. Cambiarlo en un reintento produce conflicto.
+
+El scope sigue siendo el del usuario autenticado: otro actor/workspace no puede encolar ni consultar su ledger. Un approver no recibe capacidad de despacho por haber aprobado. `authenticated_dispatch`/`dispatch_enabled` indican ahora que está disponible la admisión por cola, no un envío síncrono.
+
+### Paso 2 distinguir autoridad humana y autoridad del servicio
+
+La parte más importante es decidir qué comprobamos antes de enviar y qué necesitamos para recuperar después.
+
+| Acción | Autoridad necesaria |
+| --- | --- |
+| Preparar y admitir | Usuario autenticado, ownership, aprobación y permisos actuales. |
+| Iniciar el primer request | Permisos actuales del solicitante y aprobador, aprobación vigente, evidencia/revisión válidas y reclamo de servicio vigente. |
+| Confirmar un recibo de un request ya aceptado | Servicio limitado a la operación de su partición y guard/fencing vigentes. |
+| Consultar DISPATCHING/UNKNOWN | Mismo servicio, ID/hash original y controles del ledger. No habilita otro request. |
+| Crear/aprobar otra intención | Usuarios autorizados; el servicio no puede hacerlo. |
+
+Revocar una sesión no cancela una intención durable. Retirar permisos sí impide un **nuevo envío**, pero tampoco deshace uno que el proveedor ya aceptó. Exigir al usuario seguir habilitado para registrar aquel recibo dejaría el ledger sin una verdad que ya podemos comprobar.
+
+Esta separación conserva el control final antes del efecto descrito en [OWASP Transaction Authorization](https://cheatsheetseries.owasp.org/cheatsheets/Transaction_Authorization_Cheat_Sheet.html), y añade una autoridad explícita de servicio para el seguimiento del resultado. La consulta nunca transforma ausencia de recibo en permiso para reenviar.
+
+### Paso 3 representar un alcance de servicio sin fabricar permisos del usuario
+
+`harness/user_write_worker.py` configura el servicio con actor y workspace desde la CLI administrativa local. Su `Identity` de partición tiene roles y recursos vacíos: sirve para identificar qué ledger puede atender, no para conceder el permiso del solicitante.
+
+`ServiceWriteOperations` permite leer y actualizar ese ledger usando el guard del job y verificando la integridad de la propuesta. Sus consultas siguen filtrando actor/workspace. No acepta una identidad diferente, no prepara propuestas y no permite dispatch/reconcile sin un guard. El factory también rechaza el schema de fixtures `harness_lab`.
+
+Para autorizar el primer envío obtiene al usuario actual del directorio y delega en la validación completa de `Operations`: rol operator, recursos, aprobador distinto/vigente, workspace, vencimiento, versión/hash de evidencia, política/configuración y revisión. No inventamos una segunda política de aprobación.
+
+El proveedor MCP recibe un sobre de servicio fijo y acotado a DEV, demo/atlas y atlas-tests para la partición configurada. Sus campos de actor/workspace vinculan el registro del simulador al dueño de la operación; **no son una sesión humana ni una delegación OAuth**. No se envía el bearer del usuario por MCP ni se almacena en jobs. El proceso local y su acceso PostgreSQL/MCP son una frontera administrativa confiable del laboratorio; todavía no representan IAM administrado de producción.
+
+### Paso 4 comprobar dos veces antes del primer I/O
+
+La primera validación ocurre al reclamar PREPARED para registrar DISPATCHING. El servicio vuelve a comprobar autoridad justo antes de llamar al proveedor, además de verificar estado/versión del ledger y el guard vigente. Esto cubre una retirada de permisos entre ambos pasos.
+
+Si la autoridad falla antes de invocar al proveedor, el intento termina NOT_APPLIED con el código correspondiente. En ese recorrido sabemos que no se hizo request. Si hay un error de identidad/directorio antes del envío también se deniega; no sustituimos el usuario por el fixture ni enviamos con permisos en caché. La intención queda cerrada sin efecto, y no se relanza sola al volver el directorio.
+
+Si la llamada al proveedor ya empezó y su resultado no es fiable, se conserva UNKNOWN según las reglas anteriores. Un timeout no demuestra ausencia. La diferencia es el punto en que ocurrió el fallo, no una interpretación optimista del mensaje de error.
+
+No hay una transacción distribuida entre permisos y el proveedor: retirar un grant después del último control no revierte I/O iniciado. El límite remoto `not_after` sigue siendo el menor entre vencimiento de aprobación, lease del ledger y lease observado del job. Heartbeat y fencing no amplían ese límite de aceptación ya fijado.
+
+### Paso 5 conservar el tipo de operaciones y registrar al servicio
+
+`Operations.with_guard()` concentra la construcción de operaciones ligadas al job. La variante de servicio sobrescribe ese método para conservar su scope y su forma de resolver autoridad; el worker no la degrada accidentalmente al modo de usuario al crear el guard.
+
+El historial ahora distingue responsabilidades:
+
+```text
+PREPARED     → reader-demo
+DISPATCHING  → service:write-worker
+UNKNOWN      → service:write-worker
+SUCCEEDED    → service:write-worker
+```
+
+La aprobación sigue registrada con el actor de su credencial. Los eventos de procesamiento no aparentan una nueva acción humana ni requieren que su sesión siga activa. El servicio continúa sujeto a la versión del ledger y al propietario/token/lease del job; un proceso obsoleto no confirma resultados.
+
+### Paso 6 iniciar el ejecutor autenticado
+
+La API sigue en 8005 con el mismo modo:
+
+```bash
+uv run python -m harness.web --storage postgres --user-auth --port 8005
+```
+
+Dejá activo también el worker de lectura de M3d2. En otra terminal iniciá el nuevo worker de escrituras:
+
+```bash
+uv run python -m harness.user_write_worker --actor reader-demo --workspace workspace-alpha
+```
+
+No usa `--session`. El servicio revalida permisos actuales cuando necesita iniciar el efecto. Por defecto atiende `harness_users_lab` y el proveedor privado `jenkins-authenticated-simulator.sqlite3`. El worker M4 anterior permanece en su schema/proveedor de desarrollo.
+
+Para procesar solo un reclamo añadí `--once`. SIGTERM/Ctrl-C dejan terminar el intento actual y detienen nuevas admisiones del consumidor. El código reutiliza los mecanismos de parada/heartbeat del worker; no instala un servicio del sistema ni una automatización.
+
+### Paso 7 encolar una operación aprobada
+
+Creá un run nuevo y una propuesta, revisala/aprobala con la otra credencial y prepará la operación siguiendo la sección 41. Usá una aprobación vigente: una intención preparada antes puede haber agotado sus treinta minutos.
+
+Con la sesión del operador:
+
+```bash
+uv run python scripts/user_proposals.py --session SESION_OPERADOR dispatch UUID_DE_OPERACION
+uv run python scripts/user_proposals.py --session SESION_OPERADOR operation UUID_DE_OPERACION
+```
+
+La primera respuesta 202 confirma admisión. `write_job` permite ver estado, intentos y resultado; la segunda consulta muestra el ledger y su historial. La bandeja/revisión de la propuesta también incluye un resumen del trabajo para quienes tienen acceso a esa propuesta, sin exponer propietario interno, fencing ni traceparents.
+
+Para observar primero PENDING, dejá el worker apagado hasta encolar. Al iniciarlo debe terminar DONE/SUCCEEDED con una solicitud del simulador. Repetir dispatch no crea otro job ni resetea la operación; los permisos de la petición siguen siendo necesarios para acceder a ella.
+
+### Paso 8 recuperar una respuesta perdida con permisos retirados
+
+Para el ejercicio, admití una operación nueva con:
+
+```bash
+uv run python scripts/user_proposals.py --session SESION_OPERADOR dispatch UUID_DE_OPERACION --interrupt after-send
+```
+
+El primer reclamo hace un request, el simulador lo guarda y se omite la confirmación local. El trabajo vuelve a PENDING con `not_before` hasta el vencimiento del lease del ledger. El siguiente reclamo consulta el mismo ID/hash y termina SUCCEEDED/DONE. No ejecuta request otra vez.
+
+La prueba de esta etapa deshabilita tanto al solicitante como al aprobador y revoca sus sesiones después de aquel efecto. HTTP devuelve 401, pero un runtime nuevo del servicio encuentra el recibo y confirma el ledger. El resultado fue dos reclamos y **una sola solicitud persistida**. Restaurar los grants para futuros ejercicios no cambia ese historial.
+
+También probamos muerte real del proceso de servicio con salida 17 después del efecto, antes de guardar el resultado local. Otro runtime recupera por lookup aunque el solicitante ya esté deshabilitado. Los flags de caída se usan en pruebas aisladas; no son la forma normal de detener el worker.
+
+### Paso 9 no convertir ausencia en reintento
+
+Con `--interrupt before-send`, el ledger puede quedar DISPATCHING aunque no haya request. Tras el vencimiento, el servicio consulta y, sin prueba suficiente, conserva UNKNOWN y aparca el job en NEEDS_REVIEW. No marca NOT_APPLIED por una búsqueda vacía ni genera un UUID nuevo.
+
+Mientras exista incertidumbre, se conservan las restricciones anteriores sobre nuevas escrituras al recurso. La cola no vuelve a reclamar automáticamente un trabajo aparcado ni borra su contador de intentos.
+
+La revisión/cierre manual autenticados todavía deben conectarse a esta autoridad de servicio y a otro usuario revisor; constituyen el siguiente incremento. No usamos el flujo de fixtures de 8003 para saltar la frontera del schema autenticado. La revisión manual anterior sigue probada y disponible en su modo de desarrollo.
+
+### Paso 10 investigar el recorrido y verificar controles
+
+Para enviar las trazas del servicio al Jaeger local, antes de arrancarlo:
+
+```bash
+export HARNESS_TRACING=1
+export HARNESS_OTLP_ENDPOINT=http://127.0.0.1:4318/v1/traces
+```
+
+Buscá `harness-user-write-worker` y el tag `operation.id`. Se conservan los links entre productor/reclamos y la propagación al servidor MCP. En la traza de recuperación real se verificó únicamente `jenkins_find_request`, con spans del servicio y `harness-jenkins-write`.
+
+El dashboard existente mantiene sus exporters de desarrollo; sus snapshots no incluyen automáticamente el schema de usuarios. En esta etapa verificamos el nuevo trabajo mediante la API/ledger y Jaeger. La instrumentación de intentos del worker se conserva, pero conectar un exporter/scrape propio del servicio autenticado queda pendiente; no sumamos sus estados a los de otro schema.
+
+Las diez integraciones nuevas prueban admisión sin envío, dos consumidores, sesión revocada, permisos retirados antes y después del efecto, control final tras DISPATCHING, scope distinto, falta de guard, fencing de un propietario obsoleto, muerte real y UNKNOWN sin recibo. Las pruebas de frontera comprueban que el sobre de servicio no incluya la credencial humana y que la CLI haga solo una admisión con un header privado.
+
+```bash
+uv run python -m unittest discover -s tests -p 'test_user_write_worker.py' -v
+uv run python -m unittest discover -s integration_tests -p 'test_user_write_worker.py' -v
+uv run python scripts/evaluate.py
+uv run python scripts/evaluate_writes.py
+```
+
+Una ejecución completa detectó una prueba antigua de caída de lectura dependiente de un lease de medio segundo; al repetirla aislada pasó. Reforzamos las dos pruebas relacionadas con un lease de prueba de cinco segundos y espera del vencimiento según PostgreSQL, sin cambiar el lease de producción. La aserción sigue exigiendo una caída real y recuperación con la misma evidencia/contadores.
+
+### Paso 11 estado del ejercicio y siguiente paso
+
+La verificación real terminó SUCCEEDED/DONE con dos reclamos, un request persistido, eventos de servicio y lectura original 4/3. Se restauraron los grants originales y se revocaron todas las credenciales del ejercicio. El reporte privado vive en `data/runtime/m3d4-user-write-verification.json`; no se creó una copia de esta guía fuera del proyecto.
+
+La API autenticada, el worker de lectura y el servicio de escritura de alpha quedan disponibles para practicar. La propuesta preparada del incremento anterior permanece sin job si no fue admitida: arrancar el servicio no inventa una intención de envío.
+
+El próximo incremento conectará la **resolución manual autenticada de UNKNOWN**, con evidencia de cierre, otro actor revisor y guard/versión vigentes. Login web/OIDC, frontend multiusuario, acceso autorizado a observabilidad y contratos de Jenkins real siguen pendientes.
+
+Validación M3d4: **225 pruebas locales, 136 PostgreSQL, 8/8 evals de escritura y 9/9 de lectura aprobadas**. Diez integraciones nuevas cubren recuperación tras deshabilitar ambos actores, muerte real del servicio después del efecto, propietario obsoleto, control final y aparcado sin recibo. La prueba HTTP real terminó SUCCEEDED/DONE con dos reclamos y un solo request, con los grants retirados durante la recuperación y la lectura 4/3 intacta. Jaeger confirmó únicamente jenkins_find_request en el segundo reclamo. La suite completa se repitió con éxito tras reforzar dos pruebas antiguas de lease corto de lectura. Se restauraron los grants y se revocaron las credenciales de la verificación. Sin operaciones inciertas ni jobs de escritura activos en ambos schemas. Las suites Compose/rotación no se repitieron. Gitleaks no encontró secretos en los archivos publicables; los reportes permanecen en runtime ignorado.
+
+## M3d5 resolución manual autenticada de UNKNOWN
+
+### Paso 1 investigar sin convertir ausencia en permiso
+
+M3d4 deja UNKNOWN/NEEDS_REVIEW cuando no puede demostrar el efecto. Este incremento conecta el cierre revisado al modo de usuarios 8005. El solicitante prepara evidencia y otro actor approver la confirma; el servidor no ofrece un botón libre para forzar SUCCEEDED o NOT_APPLIED.
+
+La regla sigue siendo: una búsqueda vacía no prueba que una solicitud tardía jamás pueda aceptarse. El simulador primero guarda un cierre durable del ID, que devuelve un recibo existente o impide aceptar uno nuevo. Solo después una revisión válida puede concluir NOT_APPLIED.
+
+Reutilizamos `Resolutions`, sus hashes/versiones y los triggers SQL anteriores. No cambiamos el contrato del proveedor ni agregamos una ruta de reenvío de UNKNOWN.
+
+### Paso 2 limitar la capacidad de cierre
+
+`harness/authenticated_resolutions.py` construye un contexto de servicio para la operación, después de autorizar la vista de su propuesta con la identidad de la petición. El scope conserva al dueño original y al workspace; conocer un UUID no concede acceso.
+
+| Acción | Autoridad y condición |
+| --- | --- |
+| Preparar cierre | Dueño operator autenticado, grants actuales y trabajo aparcado. |
+| Consultar evidencia | Dueño o approver autorizado para la propuesta/workspace. |
+| Confirmar | Otro actor approver autenticado con permisos actuales y hash/versión exactos. |
+| Concluir sin efecto | Evidencia de cierre durable sin recibo, confirmada en el mismo ledger. |
+| Reenviar UNKNOWN | No permitido. |
+
+La capacidad de cierre no permite request ni lookup. `ClosureProvider` rechaza ambos y solo permite `close_request` con un autorizador vinculado a la petición. `ManualResolutionOperations` también rechaza dispatch/reconcile. Así el guard de revisión no se convierte en una forma de saltar los reclamos del worker.
+
+El worker normal no obtiene por defecto capacidad para cerrar IDs: requiere una autorización explícita para esa acción. Su seguimiento automático por recibo sigue siendo el mecanismo de M3d4, separado de esta intervención humana.
+
+### Paso 3 exigir un trabajo aparcado y preservar los locks
+
+La revisión usa un guard que bloquea primero el job y luego la operación, con el mismo orden que el worker. Solo admite NEEDS_REVIEW, o DONE para consultar/repetir una confirmación terminal. Rechaza PENDING/RUNNING; no arrebata un lease al consumidor, aunque un job RUNNING ya esté vencido.
+
+Si los cinco reclamos se agotaron y quedó DISPATCHING con lease vencido y job NEEDS_REVIEW, preparar investigación puede pasar el ledger a UNKNOWN antes de cerrar. Usa el reloj de PostgreSQL, conserva el contador y no llama request. Esto evita necesitar un reset manual de intentos para investigar ese caso.
+
+Si el ledger aún tiene lease vigente, se devuelve OPERATION_BUSY. Una operación PREPARED o terminal no se transforma arbitrariamente en una incertidumbre nueva para permitir el cierre.
+
+### Paso 4 preparar evidencia, no el resultado final
+
+El solicitante debe conservar su rol operator y los grants del recurso al iniciar el cierre. La API los revalida contra el directorio, sin confiar en el body ni en roles antiguos de la sesión. Antes y después de la llamada MCP se comprueban otra vez los permisos del actor que la autorizó.
+
+El proveedor guarda un cierre asociado al mismo operation ID, dueño/workspace y hash de la propuesta. La resolución persistida añade versión del ledger, evidencia, identidad del proveedor, marca temporal y conclusión propuesta:
+
+```text
+recibo existente → propuesta de conclusión SUCCEEDED
+cierre sin recibo → propuesta de conclusión NOT_APPLIED
+```
+
+Preparar devuelve PENDING_REVIEW y mantiene UNKNOWN. No da por aprobada esa conclusión. Repetir prepare devuelve la misma evidencia/hash sin duplicarla ni alterar su contenido.
+
+El cierre remoto no forma una transacción distribuida con PostgreSQL. Si el proveedor cerró y después falla la persistencia local o se retiran permisos, el cierre permanece. Es seguro volver a consultar/preparar ese mismo cierre; no se reabre el ID ni se crea otro UUID para escapar de la incertidumbre.
+
+### Paso 5 confirmar con un revisor actual
+
+El revisor usa su propia credencial y el hash/versión de la **resolución revisada**, no los de la aprobación original. El servidor comprueba actor distinto al solicitante, workspace, rol approver y grants. Un actor con ambos roles tampoco puede revisarse a sí mismo.
+
+`Resolutions` ahora admite un resolver de reviewer opcional. En el modo autenticado lo consulta antes de tomar los locks, después de adquirirlos y antes de confirmar. Vuelve a comprobar además la evidencia del proveedor mediante el mismo cierre idempotente. Si se retiran permisos durante esa comprobación, se rechaza la confirmación.
+
+Para finalizar una revisión ya preparada no se exige que el solicitante siga habilitado: la autoridad actual corresponde al revisor y al servicio que verifica el hecho remoto. Deshabilitar al dueño o revocar su sesión no borra el cierre ni vuelve a habilitar un envío.
+
+Si el dueño ya estaba deshabilitado antes de preparar, esta etapa no incorpora un rol administrativo que prepare en su nombre. Se requiere restaurar explícitamente los permisos adecuados o una futura capacidad operativa de investigación; no se omiten controles ni se infiere ausencia por la revocación.
+
+### Paso 6 confirmar resolución, ledger y job juntos
+
+La confirmación local hace en una transacción PostgreSQL:
+
+1. Guardar CONFIRMED, reviewer y timestamp en la resolución.
+2. Cambiar UNKNOWN a SUCCEEDED o NOT_APPLIED con versión esperada y evidencia comprobada.
+3. Marcar el job DONE, guardar su resultado e incrementar el fencing token.
+
+El trigger SQL sigue impidiendo UNKNOWN → NOT_APPLIED sin resolución confirmada que corresponda a la versión anterior del ledger. El evento del ledger identifica al usuario revisor; no aparenta otra ejecución del worker.
+
+El callback `on_confirm` permite terminar el job dentro de esa misma transacción. Si falla, se revierten las tres actualizaciones locales. El proveedor sigue cerrado y una confirmación posterior puede repetir la verificación segura. No queda una resolución confirmada con un job a medio terminar por esa ventana.
+
+Dos confirmaciones concurrentes se serializan por el job. Un reintento idéntico del mismo revisor devuelve el resultado persistido, sin otro evento ni otro incremento del token. Un hash/versión incorrectos o un intento de cambiar el revisor ya confirmado producen conflicto.
+
+### Paso 7 producir el caso UNKNOWN para practicar
+
+Usá la API 8005 y los workers de lectura/escritura autenticados de las secciones 40–42. Emití sesiones operator y approver, creá un run nuevo, proponé, aprobá y prepará una operación vigente.
+
+Admitila con el fallo antes del envío:
+
+```bash
+uv run python scripts/user_proposals.py --session SESION_OPERADOR dispatch UUID_DE_OPERACION --interrupt before-send
+uv run python scripts/user_proposals.py --session SESION_OPERADOR operation UUID_DE_OPERACION
+```
+
+Esperá a que el worker haga la consulta tras el vencimiento y muestre UNKNOWN con write_job NEEDS_REVIEW. No alcanza con ver DISPATCHING/PENDING durante la espera: el contexto manual no toma un job activo del consumidor.
+
+La prueba de reclamos agotados cubre el otro caso elegible: DISPATCHING vencido con NEEDS_REVIEW por llegar a cinco reclamos. No reinicia el contador para cerrar.
+
+### Paso 8 preparar y revisar el cierre
+
+Con la sesión del dueño:
+
+```bash
+uv run python scripts/user_proposals.py --session SESION_OPERADOR prepare-resolution UUID_DE_OPERACION
+```
+
+La salida contiene `resolution`, con payload, payload_hash, version y status. Después, con la otra sesión:
+
+```bash
+uv run python scripts/user_proposals.py --session SESION_APROBADOR resolution UUID_DE_OPERACION
+```
+
+Revisá operation ID/versión, workspace, solicitante, hash de propuesta, recibo o ausencia y el cierre del proveedor. Copiá el hash y la versión de esta resolución. El hash no es el de la propuesta inicial: ahora se está revisando otra evidencia y otra decisión.
+
+La consulta/revisión de la propuesta y su bandeja también muestran la resolución asociada a quienes ya tienen autorización para verla. No concede acceso al historial completo de runs de otro actor.
+
+### Paso 9 confirmar sin enviar otra solicitud
+
+```bash
+uv run python scripts/user_proposals.py --session SESION_APROBADOR confirm-resolution UUID_DE_OPERACION --payload-hash HASH_DE_LA_RESOLUCION --version 0
+```
+
+Usá la versión devuelta al revisar; para una resolución recién preparada es cero. No se envía `reviewed_by`, evidencia ni conclusión desde el cliente. Solo hash y versión; el servidor determina identidad y resultado.
+
+Para el caso sin efecto deben quedar:
+
+```text
+resolution: CONFIRMED
+operation: NOT_APPLIED · MANUAL_PROVIDER_CLOSURE
+write_job: DONE · NOT_APPLIED
+proposal: CONSUMED
+```
+
+Con un recibo aceptado previamente, queda SUCCEEDED sin otro request. Esa aprobación consumida no vuelve a estar disponible, y el ID cerrado rechaza un envío tardío.
+
+Los rechazos de auto-revisión/permisos producen 403, otro workspace recibe 404, hash/versión incorrectos dan 409 y campos añadidos como `conclusion` dan 422. El cliente devuelve código 1 para esos rechazos. Una credencial revocada devuelve 401 antes de llegar a esta lógica.
+
+### Paso 10 evidencia y pruebas
+
+El ejercicio HTTP real dejó UNKNOWN/NEEDS_REVIEW mediante before-send. Preparó el cierre, rechazó auto-revisión, otro workspace, hash incorrecto y un revisor cuyos permisos se retiraron. La confirmación se completó con otro actor después de deshabilitar al solicitante, y el reintento devolvió el mismo resultado.
+
+Se comprobó NOT_APPLIED/DONE, un incremento del fencing token, evento final approver-demo y cero solicitudes aceptadas para ese ID. Una sonda adversarial separada intentó enviar al ID cerrado y recibió OPERATION_CLOSED; no forma parte de la recuperación del worker. La lectura original conservó cuatro decisiones y tres herramientas. Se restauraron los grants y se revocaron las credenciales del ejercicio.
+
+Las integraciones cubren ausencia y recibo existente, cierre que impide un envío tardío, dos actores/roles, aislamiento, rollback de confirmación, concurrencia, permisos retirados durante MCP, rechazo de jobs activos y reclamos agotados. La prueba de rollback fuerza un fallo al finalizar el job: resolución PENDING_REVIEW, ledger UNKNOWN y job NEEDS_REVIEW quedan intactos hasta un reintento autorizado.
+
+```bash
+uv run python -m unittest discover -s tests -p 'test_authenticated_resolutions.py' -v
+uv run python -m unittest discover -s integration_tests -p 'test_authenticated_resolutions.py' -v
+uv run python scripts/evaluate.py
+uv run python scripts/evaluate_writes.py
+```
+
+Una ejecución completa mostró una prueba anterior que suponía lookup en el siguiente reclamo inmediato; aislada pasó. La prueba ahora admite espera sin reclamo y el aplazamiento permitido por OPERATION_BUSY, con plazo acotado y sin resetear intentos. Sigue exigiendo exactamente un lookup, ningún reenvío, un efecto y resultado terminal correcto; cualquier otro error falla. No se añadieron reintentos ocultos al cliente MCP ni se modificó el comportamiento de producción por esa prueba.
+
+### Paso 11 cierre de esta parte y preparación de M5
+
+Con esto, el recorrido autenticado ya cubre propuesta, aprobación, cola, envío, recuperación y cierre manual revisado para el proveedor ficticio. La siguiente parte será verificar el recorrido autenticado como conjunto y preparar su checkpoint; después pasaremos a **M5: conocimiento/RAG**.
+
+Login web/OIDC, refinamiento del frontend, nuevos exporters y roles administrativos no se agregan como condiciones nuevas antes de M5. Siguen registrados en el alcance pendiente. Las garantías de cierre/deduplicación corresponden al simulador y no se atribuyen automáticamente a Jenkins real.
+
+El paso a paso permanece en esta guía del proyecto. La evidencia de ejecución queda privada en `data/runtime/m3d5-manual-resolution-verification.json`, ignorada por Git; no se crea una copia de la documentación en Documents/Codex.
+
+Validación M3d5: **228 pruebas locales, 146 PostgreSQL, 8/8 evals de escritura y 9/9 de lectura aprobadas**. Diez integraciones nuevas y tres pruebas de frontera/cliente cubren cierre, revisor actual, aislamiento, rollback atómico, concurrencia y reclamos agotados. La suite completa final pasó tras hacer explícitos los aplazamientos permitidos de una prueba de recuperación anterior, sin modificar el ejecutor de producción. La verificación HTTP terminó CONFIRMED/NOT_APPLIED/DONE con cero solicitudes aceptadas, cierre que rechazó un intento tardío, un incremento de fencing y auditoría del revisor; el solicitante estaba deshabilitado al confirmar. Se restauraron grants y revocaron las sesiones del ejercicio. No quedaron operaciones inciertas ni jobs de escritura activos en los schemas principales. Compose/rotación no se repitieron. Gitleaks no encontró secretos en los archivos publicables; runtime y credenciales permanecen ignorados.
+
+## Cierre autenticado evaluaciones y checkpoint antes de M5
+
+### Paso 1 evaluar el recorrido completo por su frontera HTTP
+
+Las suites anteriores conservan nueve casos de lectura y ocho de escritura. Añadimos cuatro casos en `evals/authenticated_cases.json`, ejecutados por `scripts/evaluate_authenticated.py`.
+
+Este cierre atraviesa la API con credenciales emitidas en un directorio temporal, los workers de lectura/escritura y los procesos MCP Python/Go. HTTP se ejercita mediante TestClient/ASGI dentro del proceso, con middleware, validación y rutas reales; **no es una prueba de sockets, proxy o despliegue remoto**.
+
+El objetivo es medir las garantías del recorrido autenticado, no solo verificar que el último estado diga SUCCEEDED.
+
+| Caso | Resultado y evidencia esperados |
+| --- | --- |
+| AUTH-approved | Otro usuario aprueba; un request, un efecto y job DONE. |
+| AUTH-revoked-before-send | Se retiran permisos del aprobador después de admitir; NOT_APPLIED, cero requests/efectos. |
+| AUTH-recovery-revoked | Se pierde la confirmación después del efecto y se revocan ambos actores/sesiones; un runtime nuevo consulta el recibo sin reenviar. |
+| AUTH-manual-closure | Interrupción antes de enviar, UNKNOWN/NEEDS_REVIEW, cierre revisado por otro actor y NOT_APPLIED/DONE sin efecto. |
+
+Todos los casos comprueban además credencial ausente, otro workspace, otro actor del mismo workspace, rol de lectura insuficiente y autoaprobación incluso con ambos roles. El revisor consulta la propuesta por su API antes de decidir.
+
+### Paso 2 separar llamadas, efectos y estados
+
+Instrumentamos el cliente MCP para contar revision/request/lookup/close sin reemplazar el transporte ni la validación. Medimos los efectos aparte en la SQLite del proveedor. Las expectativas exactas están en el dataset versionado; no se calculan a partir del estado que devuelve Operations.
+
+| Caso | Revision | Request automático | Lookup | Close | Efectos |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| approved | 1 | 1 | 0 | 0 | 1 |
+| revoked-before-send | 1 | 0 | 0 | 0 | 0 |
+| recovery-revoked | 1 | 1 | 1 | 0 | 1 |
+| manual-closure | 1 | 0 | 1 | 2 | 0 |
+
+La sonda adversarial de envío al ID cerrado se mide aparte como `probe_calls`; debe ser rechazada. No se presenta como un request automático del worker ni como efecto aceptado.
+
+La recuperación admite aplazamientos legítimos por el lease, dentro del máximo persistido de cinco reclamos. No tolera solicitudes extra, búsquedas duplicadas, reset de intentos o un resultado terminal incorrecto. Un SUCCEEDED con dos requests o efectos duplicados falla.
+
+### Paso 3 verificar identidad, evidencia e idempotencia
+
+Cada caso pausa la lectura tras Jira, recupera mediante la API y exige conservar el primer resultado, los conteos 4/3 y el snapshot de límites. Después de la escritura/revisión compara el run completo para detectar cambios en aquella evidencia.
+
+También exige una sola propuesta/operación/job para la intención repetida, vinculación de los requests al ID/hash/argumentos aprobados y actor de decisión derivado de la sesión. La autoaprobación no se supera cambiando headers o acumulando ambos roles.
+
+El caso manual comprueba otra revisión, cierre que bloquea el envío tardío y job terminado en la misma confirmación. El caso de revocación posterior al efecto demuestra que seguir el recibo no depende de conservar habilitado al usuario. Los ciclos posteriores del servicio no deben hacer más I/O.
+
+### Paso 4 aislar y limpiar cada evaluación
+
+Cada caso usa un schema `harness_eval_<uuid>`, un proveedor en un directorio temporal y credenciales que solo existen en memoria y en ese schema. No emite archivos de sesión en el runtime real ni usa los usuarios/historial de las consolas.
+
+La aplicación recibe el directorio de prueba explícitamente y el worker usa ese mismo almacenamiento. Los runtimes de recuperación se reconstruyen a partir de él; no se conserva una autorización ficticia en variables para eludir permisos retirados.
+
+Los context managers cierran la API y eliminan el schema/proveedor al terminar. Un fallo al ejecutar o limpiar el caso produce EVALUATION_EXECUTION_ERROR y no se devuelve PASS. El reporte omite tokens, session IDs, DSN, rutas temporales y UUID de objetos del caso; conserva hechos y checks sanitizados. Una terminación forzada o una base inaccesible puede impedir la limpieza, como en los evaluadores anteriores; no se agrega borrado masivo de schemas ajenos.
+
+### Paso 5 ejecutar las tres líneas base
+
+Con Python/Go, PostgreSQL local y dependencias de desarrollo preparados:
+
+```bash
+uv sync --locked
+uv run python scripts/postgres.py up
+uv run python scripts/build_jenkins.py
+uv run python scripts/evaluate.py
+uv run python scripts/evaluate_writes.py
+uv run python scripts/evaluate_authenticated.py
+```
+
+`uv sync` incluye el grupo de desarrollo que necesita TestClient/httpx. No hace falta iniciar API, workers de la app, Jaeger ni Grafana: el evaluador crea su API ASGI y ejecuta los consumidores dentro de su entorno aislado. Los servicios existentes pueden seguir activos porque sus schemas son distintos.
+
+Los reportes privados son:
+
+- `data/runtime/evals/latest.json`: nueve casos de lectura.
+- `data/runtime/evals/writes-latest.json`: ocho casos de escritura.
+- `data/runtime/evals/authenticated-latest.json`: cuatro casos autenticados.
+
+Son **21 evaluaciones**, no 21 pruebas unitarias ni evidencia de un LLM real. `checks` explica cada criterio; `observed` muestra lo medido. El tiempo es informativo y no se usa como SLA. El comando termina con código 1 ante fallos, dataset inválido/incompleto o cero casos; con código 0 solo si todo pasa.
+
+### Paso 6 comprobar que el grader puede rechazar
+
+Las pruebas del evaluador alteran estados, efectos, llamadas, claims, evidencia y denegaciones. Verifican que un estado final aparentemente correcto no oculte un error de seguridad o un reenvío.
+
+Otras pruebas fuerzan errores del entorno/dataset y de limpieza, comprueban salida no exitosa y ausencia de excepciones crudas. Las integraciones ejecutan el recorrido real y verifican que su schema ya no exista al terminar.
+
+```bash
+uv run python -m unittest discover -s tests -p 'test_authenticated_evaluations.py' -v
+uv run python -m unittest discover -s integration_tests -p 'test_authenticated_evaluations.py' -v
+```
+
+### Paso 7 guardar el checkpoint y conservar límites
+
+El checkpoint local reúne M3d1–M3d5 y las evaluaciones autenticadas: identidad local, ownership, dos actores, cola, servicio de escritura, recuperación y resolución manual. Antes de guardarlo se revisa el árbol publicable completo, enlaces y exclusión de runtime, credenciales, bases y claves. El autor de Git conserva correo noreply. Publicar en GitHub es una acción separada de guardar este commit local.
+
+Esto cierra el recorrido **local con backends/modelo ficticios** que necesitábamos para avanzar. No declara M3/M4/S09 completos para producción: login web/OIDC, roles administrativos, frontend multiusuario, acceso autorizado a trazas, despliegue y contratos de proveedores reales permanecen pendientes.
+
+### Paso 8 continuar con M5 sin ampliar este cierre
+
+El siguiente hito funcional es **M5: conocimiento/RAG**. Retomaremos el diseño original con Chroma como servicio, registro/versiones del corpus, ingestión y retirada, citas y acceso por workspace/documento.
+
+Los criterios S10 y S11 siguen guiando el trabajo: un ingest fallido no reemplaza una versión activa válida; retirar un documento lo excluye de recuperación y un job viejo no puede reactivarlo. Las mejoras pendientes de login, frontend o monitores no se incorporan como bloqueos nuevos para empezar ese hito.
+
+Seguiremos por incrementos y documentando en esta misma guía del proyecto. No se crean copias del paso a paso fuera del repositorio.
+
+Validación de cierre previo a M5: **235 pruebas locales, 148 PostgreSQL y 21/21 evaluaciones aprobadas** (9 lectura, 8 escritura y 4 autenticadas). El runner nuevo usa HTTP ASGI y procesos MCP reales del laboratorio, con schemas/proveedores temporales. Dos integraciones comprueban ejecución/limpieza y fallo de limpieza sin PASS; siete pruebas del grader/CLI verifican detección de regresiones y errores sanitizados. Las suites Compose/rotación no se repitieron, porque esta parte no modifica infraestructura. Se revisa el árbol completo del checkpoint antes de guardarlo; los reportes, sesiones, claves, certificados y bases siguen fuera de Git. M5 es el próximo hito funcional.

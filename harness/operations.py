@@ -13,9 +13,18 @@ class OperationInterrupted(BaseException):
 
 
 class Operations:
-    def __init__(self,proposals,provider,principals,*,guard=None):
+    service_execution=False
+    def __init__(self,proposals,provider,principals,*,guard=None,principal_resolver=None):
         self.guard=guard
+        self.principal_resolver=principal_resolver
         self.proposals,self.runs,self.provider,self.principals=proposals,proposals.runs,provider,dict(principals)
+
+    def with_guard(self,guard):
+        return Operations(self.proposals,self.provider,self.principals,guard=guard,
+            principal_resolver=self.principal_resolver)
+
+    def before_send(self,identifier,identity,version=None):
+        pass
 
     def _check(self,db):
         return self.guard(db) if self.guard else None
@@ -29,7 +38,11 @@ class Operations:
     def _valid(self,db,proposal,identity):
         self._operator(identity)
         self.proposals._restore(proposal)
-        approver=self.principals.get(proposal['decided_by'])
+        if self.principal_resolver is not None:
+            current=self.principal_resolver(identity.actor_id,identity.workspace_id)
+            if current!=identity:raise ContractError('FORBIDDEN')
+            approver=self.principal_resolver(proposal['decided_by'],identity.workspace_id)
+        else:approver=self.principals.get(proposal['decided_by'])
         if (approver is None or 'approver' not in approver.roles or approver.actor_id==identity.actor_id
                 or approver.workspace_id!=identity.workspace_id):
             raise ContractError('FORBIDDEN')
@@ -131,6 +144,12 @@ class Operations:
             claimed=self._transition(db,row,'DISPATCHING',identity)
         # DISPATCHING y su evento ya están confirmados antes del I/O.
         if interrupt=='before-send':raise OperationInterrupted()
+        if self.service_execution:
+            try:self.before_send(identifier,identity,claimed['version'])
+            except ContractError as error:
+                if error.code=='LEASE_LOST':raise
+                # Todavía no se llamó al proveedor: rechazo local sin efecto en este intento.
+                return self._finish(identifier,identity,claimed['version'],'NOT_APPLIED',code=error.code)
         try:
             if self.guard:
                 with self.runs._database() as db:self._check(db)
