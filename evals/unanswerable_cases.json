@@ -1,0 +1,45 @@
+{
+  "version": "retrieval-unanswerable-v1",
+  "cases": [
+    {
+      "id": "missing-budget",
+      "query": "¿Cuál es el presupuesto anual en dólares del producto Atlas?",
+      "reason": "El corpus no contiene presupuestos monetarios."
+    },
+    {
+      "id": "missing-release-date",
+      "query": "¿Qué día y a qué hora se publicará la próxima versión de Atlas?",
+      "reason": "Hay una responsable de entrega, pero no un calendario."
+    },
+    {
+      "id": "missing-contact",
+      "query": "¿Cuál es el correo electrónico de Marta?",
+      "reason": "Nombrar a Marta no aporta sus datos de contacto."
+    },
+    {
+      "id": "missing-build-sha",
+      "query": "¿Cuál es el SHA exacto del último build de Atlas?",
+      "reason": "Se explica cómo comparar revisiones, sin proporcionar un build concreto."
+    },
+    {
+      "id": "missing-key-period",
+      "query": "¿Cuántos minutos dura el solapamiento entre las claves de firma?",
+      "reason": "El texto menciona solapamiento, sin indicar su duración."
+    },
+    {
+      "id": "missing-approval-count",
+      "query": "¿Cuántas solicitudes aprobó Marta el mes pasado?",
+      "reason": "La política de aprobación no contiene un historial de decisiones."
+    },
+    {
+      "id": "outside-weather",
+      "query": "¿Va a llover mañana en San José?",
+      "reason": "El corpus no contiene datos meteorológicos."
+    },
+    {
+      "id": "outside-food",
+      "query": "¿Cómo preparo una lasaña de espinacas?",
+      "reason": "El corpus no contiene recetas de cocina."
+    }
+  ]
+}

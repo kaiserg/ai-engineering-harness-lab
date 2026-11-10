@@ -5,7 +5,6 @@ import math
 from pathlib import Path
 import sys
 import statistics
-import statistics
 import time
 from uuid import uuid4
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
@@ -20,6 +19,7 @@ from harness.security_lifecycle import atomic_json
 from harness.user_identity import UserIdentityStore
 
 DATASET=Path(__file__).resolve().parents[1]/'evals/retrieval_cases.json'
+UNANSWERABLE=DATASET.with_name('unanswerable_cases.json')
 
 
 def grade(ranked,relevant):
@@ -30,11 +30,21 @@ def grade(ranked,relevant):
             'reciprocal_rank_at_3':1/rank if rank and rank<=3 else 0}
 
 
+def grade_unanswerable(matches):
+    # Ground truth belongs to this synthetic fixture; this is NOT a runtime answerability detector.
+    return {'expected_action':'abstain', 'candidate_count':len(matches),
+            'has_candidates':bool(matches)}
+
+
 def run():
     data=json.loads(DATASET.read_text())
+    negatives=json.loads(UNANSWERABLE.read_text())
     schema='harness_retrieval_eval_'+uuid4().hex
     runs=PostgresRunStore(local_dsn(),schema=schema);vectors=ChromaVectors()
-    knowledge=None;report={'dataset':data['version'],'dataset_sha256':digest(DATASET.read_text()),'profiles':{},'passed':False}
+    knowledge=None;report={'dataset':data['version'],'dataset_sha256':digest(DATASET.read_text()),'profiles':{},'passed':False,
+        'unanswerable_dataset':negatives['version'],'unanswerable_sha256':digest(UNANSWERABLE.read_text()),
+        'answerability_evaluated':False,'runtime_abstention_implemented':False,
+        'passed_scope':'retrieval_gates_citations_access_and_cleanup_only'}
     try:
         directory=UserIdentityStore(runs);directory.bootstrap()
         auth=lambda:directory.resolve('reader-demo','workspace-alpha')
@@ -65,6 +75,22 @@ def run():
                    for metric in ('top1','recall_at_3','reciprocal_rank_at_3')},
                 'latency_p50_ms':round(statistics.median(latencies),2),
                 'latency_p95_ms':latencies[math.ceil(.95*len(latencies))-1]}
+            negative_cases=[]
+            for case in negatives['cases']:
+                result=engine.search(case['query'],3)
+                # Verify citations even for irrelevant candidates; valid source != sufficient evidence.
+                for match in result['matches']:
+                    identifier=match['citation'].split(':')[1]
+                    assert match['citation'].startswith('['+index['index_id']+':')
+                    assert match['text']==content[identifier]['text']
+                    assert match['filename']==content[identifier]['filename']
+                    assert match['trust']=='untrusted_document'
+                negative_cases.append({'id':case['id'],**grade_unanswerable(result['matches']),
+                    'ranked':[mapping[m['citation'].split(':')[1]] for m in result['matches']]})
+            report['profiles'][profile]['unanswerable']={
+                'cases':negative_cases,'queries':len(negative_cases),
+                'queries_with_candidates':sum(c['has_candidates'] for c in negative_cases),
+                'interpretation':'Candidates are not answers; this measures retrieval behavior, not abstention quality.'}
         # El motor semántico no puede entregar contenido de otro workspace/actor ni de un retirado.
         for actor,workspace in [('reader-beta','workspace-beta'),('no-access-reader','workspace-alpha')]:
             if actor=='no-access-reader':
@@ -99,7 +125,7 @@ def main():
     args=parser.parse_args();report=run();args.output.parent.mkdir(parents=True,exist_ok=True);atomic_json(args.output,report)
     print(json.dumps({key:value for key,value in report.items() if key!='profiles'},ensure_ascii=False))
     for profile,result in report['profiles'].items():
-        print(json.dumps({'profile':profile,**{key:result[key] for key in ('top1','recall_at_3','reciprocal_rank_at_3','latency_p50_ms','latency_p95_ms')}}))
+        print(json.dumps({'profile':profile,'unanswerable_queries_with_candidates':result.get('unanswerable',{}).get('queries_with_candidates'),**{key:result[key] for key in ('top1','recall_at_3','reciprocal_rank_at_3','latency_p50_ms','latency_p95_ms')}}))
     return 0 if report['passed'] and report.get('cleanup') else 1
 
 

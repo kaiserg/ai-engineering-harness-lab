@@ -4,9 +4,9 @@ Esta guía registra lo que ya funciona y explica cómo se relaciona con el dise�
 
 Para distinguir lo implementado del diseño objetivo, consultá la [matriz de cierre de etapa 2](status.md), con hitos, escenarios y pendientes.
 
-La guía se divide ahora en **50 capítulos**, uno por paso, dentro de `docs/guide/`. El contenido anterior se conserva en su orden de construcción; la [matriz de estado](status.md) distingue lo actual de los pasos históricos.
+La guía se divide ahora en **51 capítulos**, uno por paso, dentro de `docs/guide/`. El contenido anterior se conserva en su orden de construcción; la [matriz de estado](status.md) distingue lo actual de los pasos históricos.
 
-**Último paso:** [M5f · Embeddings semánticos y evaluaciones](guide/50-m5f-embeddings-semanticos-y-evaluaciones.md).
+**Último paso:** [M5g · Preguntas sin respuesta y camino al chat](guide/51-m5g-preguntas-sin-respuesta.md).
 
 ## Índice
 
@@ -211,3 +211,7 @@ Los encabezados conservan las anclas de la guía anterior para mantener sus enla
 ## M5f Embeddings semánticos y evaluaciones de recuperación
 
 [50. Leer el capítulo](guide/50-m5f-embeddings-semanticos-y-evaluaciones.md).
+
+## M5g Preguntas sin respuesta y camino al chat
+
+[51. Leer el capítulo](guide/51-m5g-preguntas-sin-respuesta.md).

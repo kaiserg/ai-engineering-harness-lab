@@ -6,7 +6,7 @@ from unittest.mock import patch
 import httpx
 from harness.contracts import ContractError
 from harness.embeddings import MODEL,MODEL_DIGEST,DIMENSION,INSTRUCTION,OllamaEmbedding,provider_for
-from scripts.evaluate_retrieval import grade
+from scripts.evaluate_retrieval import grade,grade_unanswerable
 
 
 class EmbeddingTests(unittest.TestCase):
@@ -45,6 +45,19 @@ class EmbeddingTests(unittest.TestCase):
         self.assertEqual(grade(['a','b','c'],['b']),{'top1':0,'recall_at_3':1.0,'reciprocal_rank_at_3':.5})
         self.assertEqual(grade(['c'],['a'])['recall_at_3'],0)
         self.assertEqual(grade(['a','b'],['a','b'])['recall_at_3'],1)
+
+    def test_unanswerable_candidates_do_not_count_as_answers(self):
+        self.assertEqual(grade_unanswerable([{'citation':'valid-but-irrelevant'}]),
+                         {'expected_action':'abstain','candidate_count':1,'has_candidates':True})
+        self.assertEqual(grade_unanswerable([])['expected_action'],'abstain')
+
+    def test_negative_fixture_has_unique_cases_and_no_answers(self):
+        from scripts.evaluate_retrieval import UNANSWERABLE
+        cases=json.loads(UNANSWERABLE.read_text())['cases']
+        self.assertEqual(len({case['id'] for case in cases}),len(cases))
+        self.assertGreaterEqual(len(cases),8)
+        self.assertTrue(all(case['query'] and case['reason'] for case in cases))
+        self.assertTrue(all('answer' not in case for case in cases))
 
     def test_index_budget_is_checked_after_embedding_before_chroma_write(self):
         from harness.chroma_vectors import ChromaVectors
