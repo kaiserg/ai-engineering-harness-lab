@@ -10,10 +10,10 @@ from .contracts import ContractError, Identity, ToolCall
 from .telemetry import span, annotate
 
 
-def build_read_server(identity, tool_name, input_schema, validate, backend, *, binding=None):
+def build_read_server(identity, tool_name, input_schema, validate, backend, *, binding=None, description='Consulta un recurso ficticio autorizado. Solo lectura.'):
     async def list_tools(context, params):
         return ListToolsResult(tools=[Tool(name=tool_name,
-            description='Consulta un recurso ficticio autorizado. Solo lectura.', inputSchema=input_schema)])
+            description=description, inputSchema=input_schema)])
 
     async def call_tool(context, params):
         with span('mcp.tool',values={'tool.name':tool_name}):

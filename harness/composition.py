@@ -26,6 +26,46 @@ class Execution:
 
 def compose(profile, identity, store, *, limits=Limits(), checkpoint_hook=None, delay=0, denied=False, knowledge=None):
     from .rag_agent import PROFILE,KnowledgePolicy,KnowledgeTool,RAGScriptedLLM,finalize_rag
+    from .llm_reader import PROFILE as READER_PROFILE,OllamaReader,finish
+    from .chat import PROFILE as CHAT_PROFILE,ChatPolicy,ChatReader
+    from .jira_chat import is_jira,JiraReader,JiraPolicy,finish as finish_jira
+    from .jira_cloud import PREFIX as CLOUD_PREFIX
+    from .github_chat import PROFILES as GH_PROFILES,PUBLIC as GH_PUBLIC,GitHubReader,GitHubPolicy,finish as finish_github
+    github_chat=profile in GH_PROFILES
+    jira_chat=is_jira(profile)
+    if profile in (READER_PROFILE,CHAT_PROFILE) or jira_chat or github_chat:
+        if knowledge is None:
+            from .postgres_store import PostgresRunStore
+            from .user_identity import UserIdentityStore
+            from .knowledge import Knowledge
+            if not hasattr(store,'_dsn') or store.schema=='harness_lab':raise ContractError('CONFIG_CHANGED')
+            directory=UserIdentityStore(PostgresRunStore(store._dsn))
+            knowledge=Knowledge(store,lambda:directory.resolve(identity.actor_id,identity.workspace_id))
+        if github_chat:
+            if profile==GH_PUBLIC:
+                from .adapters.mcp_github_public import MCPGitHubPublic
+                adapter=MCPGitHubPublic(identity)
+            else:
+                from .adapters.mcp_github import MCPGitHub
+                adapter=MCPGitHub(identity)
+            policy=GitHubPolicy(knowledge,profile)
+            return Execution(Harness(GitHubReader(policy,identity),policy,{'github_get_pull_request':adapter},store,
+                limits=limits,checkpoint_hook=checkpoint_hook,execution_profile=profile,decision_finalizer=finish_github),{'github':adapter})
+        if jira_chat:
+            if profile.startswith(CLOUD_PREFIX):
+                from .adapters.mcp_jira_cloud import MCPJiraCloud
+                adapter=MCPJiraCloud(identity,profile[len(CLOUD_PREFIX):])
+            else:
+                from .adapters.mcp_jira import MCPJira
+                adapter=MCPJira(identity,content_scenario='benign')
+            policy=JiraPolicy(knowledge,profile)
+            return Execution(Harness(JiraReader(policy,identity),policy,{'jira_get_issue':adapter},store,
+                limits=limits,checkpoint_hook=checkpoint_hook,execution_profile=profile,decision_finalizer=finish_jira),{'jira':adapter})
+        adapter=KnowledgeTool(knowledge)
+        policy=ChatPolicy(knowledge) if profile==CHAT_PROFILE else KnowledgePolicy(knowledge)
+        model=ChatReader(policy,identity) if profile==CHAT_PROFILE else OllamaReader()
+        return Execution(Harness(model,policy,{'knowledge_search':adapter},store,
+            limits=limits,checkpoint_hook=checkpoint_hook,execution_profile=profile,decision_finalizer=finish),{'knowledge':adapter})
     rag=profile==PROFILE
     ci = parse_ci_profile('mcp-devops-ci-v2:matching' if rag else profile)
     if ci is None and profile not in {'fake-jira-v1', 'mcp-jira-fixture-v1', 'mcp-devops-read-v1'}:

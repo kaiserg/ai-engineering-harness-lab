@@ -1,0 +1,214 @@
+{
+  "version": "reader-es-en-v1",
+  "gates": {
+    "answer_accuracy": 0.9,
+    "abstention_recall": 1.0,
+    "supported_citations": 1.0
+  },
+  "cases": [
+    {
+      "id": "exact-release",
+      "query": "Marta responsable release Atlas",
+      "relevant": [
+        "release"
+      ],
+      "expected_status": "ANSWERED",
+      "expected_any": [
+        "marta"
+      ]
+    },
+    {
+      "id": "paraphrase-release",
+      "query": "¿Quién coordina la entrega de la nueva versión de Atlas?",
+      "relevant": [
+        "release"
+      ],
+      "expected_status": "ANSWERED",
+      "expected_any": [
+        "marta"
+      ]
+    },
+    {
+      "id": "paraphrase-uncertain",
+      "query": "El proveedor aceptó la petición y se cortó la conexión, ¿cómo evito ejecutar dos veces?",
+      "relevant": [
+        "uncertain"
+      ],
+      "expected_status": "ANSWERED",
+      "expected_any": [
+        "recibo",
+        "operation_id",
+        "consult"
+      ]
+    },
+    {
+      "id": "self-approval",
+      "query": "¿Puedo autorizar yo mismo el trabajo que pedí?",
+      "relevant": [
+        "approval"
+      ],
+      "expected_status": "ANSWERED",
+      "expected_any": [
+        "otro",
+        "solicitante"
+      ]
+    },
+    {
+      "id": "retired-reappearing",
+      "query": "¿Qué impide que una tarea antigua vuelva a hacer visible un archivo dado de baja?",
+      "relevant": [
+        "retirement"
+      ],
+      "expected_status": "ANSWERED",
+      "expected_any": [
+        "revisión",
+        "revision",
+        "inventario"
+      ]
+    },
+    {
+      "id": "failed-search-rebuild",
+      "query": "Si regenerar el buscador falla, ¿se pierde lo que antes podía consultar?",
+      "relevant": [
+        "index"
+      ],
+      "expected_status": "ANSWERED",
+      "expected_any": [
+        "anterior"
+      ]
+    },
+    {
+      "id": "crash-time",
+      "query": "¿Cómo se contabilizan los segundos que pudo gastar el intento que murió?",
+      "relevant": [
+        "budget"
+      ],
+      "expected_status": "ANSWERED",
+      "expected_any": [
+        "reserv",
+        "cobra",
+        "presupuesto"
+      ]
+    },
+    {
+      "id": "green-build",
+      "query": "¿Una ejecución verde valida cualquier cambio del pull request?",
+      "relevant": [
+        "revision"
+      ],
+      "expected_status": "ANSWERED",
+      "expected_any": [
+        "revisión",
+        "revision",
+        "sha"
+      ]
+    },
+    {
+      "id": "live-signing-rotation",
+      "query": "¿Cómo renovar la firma sin invalidar las credenciales aún vigentes?",
+      "relevant": [
+        "rotation"
+      ],
+      "expected_status": "ANSWERED",
+      "expected_any": [
+        "pública",
+        "publica",
+        "jwks",
+        "anterior"
+      ]
+    },
+    {
+      "id": "exact-revision",
+      "query": "comparar SHA PR build revisión",
+      "relevant": [
+        "revision"
+      ],
+      "expected_status": "ANSWERED",
+      "expected_any": [
+        "revisión",
+        "revision",
+        "sha"
+      ]
+    },
+    {
+      "id": "cross-language-release",
+      "query": "Who is accountable for shipping the next Atlas software version?",
+      "relevant": [
+        "release"
+      ],
+      "expected_status": "ANSWERED",
+      "expected_any": [
+        "marta"
+      ]
+    },
+    {
+      "id": "cross-language-uncertain",
+      "query": "Should I resubmit a request if the server might have already accepted it?",
+      "relevant": [
+        "uncertain"
+      ],
+      "expected_status": "ANSWERED",
+      "expected_any": [
+        "recibo",
+        "operation_id",
+        "consult"
+      ]
+    },
+    {
+      "id": "missing-budget",
+      "query": "¿Cuál es el presupuesto anual en dólares del producto Atlas?",
+      "expected_status": "ABSTAINED",
+      "relevant": [],
+      "expected_any": []
+    },
+    {
+      "id": "missing-release-date",
+      "query": "¿Qué día y a qué hora se publicará la próxima versión de Atlas?",
+      "expected_status": "ABSTAINED",
+      "relevant": [],
+      "expected_any": []
+    },
+    {
+      "id": "missing-contact",
+      "query": "¿Cuál es el correo electrónico de Marta?",
+      "expected_status": "ABSTAINED",
+      "relevant": [],
+      "expected_any": []
+    },
+    {
+      "id": "missing-build-sha",
+      "query": "¿Cuál es el SHA exacto del último build de Atlas?",
+      "expected_status": "ABSTAINED",
+      "relevant": [],
+      "expected_any": []
+    },
+    {
+      "id": "missing-key-period",
+      "query": "¿Cuántos minutos dura el solapamiento entre las claves de firma?",
+      "expected_status": "ABSTAINED",
+      "relevant": [],
+      "expected_any": []
+    },
+    {
+      "id": "missing-approval-count",
+      "query": "¿Cuántas solicitudes aprobó Marta el mes pasado?",
+      "expected_status": "ABSTAINED",
+      "relevant": [],
+      "expected_any": []
+    },
+    {
+      "id": "outside-weather",
+      "query": "¿Va a llover mañana en San José?",
+      "expected_status": "ABSTAINED",
+      "relevant": [],
+      "expected_any": []
+    },
+    {
+      "id": "outside-food",
+      "query": "¿Cómo preparo una lasaña de espinacas?",
+      "expected_status": "ABSTAINED",
+      "relevant": [],
+      "expected_any": []
+    }
+  ]
+}

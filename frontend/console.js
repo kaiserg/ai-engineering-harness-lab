@@ -1,13 +1,14 @@
 import {api,text,row,refresh as refreshKnowledge,message,getIdentity,disconnect} from './knowledge.js';
+import {refreshChat} from './chat.js';
 const $=id=>document.getElementById(id);
-const names={runs:'Ejecuciones',knowledge:'Conocimiento',approvals:'Aprobaciones',observability:'Observabilidad',config:'Configuración'};
+const names={chat:'Chat',runs:'Ejecuciones',knowledge:'Conocimiento',approvals:'Aprobaciones',observability:'Observabilidad',config:'Configuración'};
 let active='runs', selectedRun=null, selectedProposal=null, runs=[], config=null;
 let busy=false, refreshing=false, sessionVersion=0, runStamp=null, proposalStamp=null, runListStamp=null, approvalListStamp=null;
 const proposalKeys=new Map();
 const has=role=>getIdentity()?.roles.includes(role);
 const canRead=()=>has('reader')||has('operator');
 const canReview=()=>has('operator')||has('approver');
-function permitted(view){return ['runs','knowledge'].includes(view)?canRead():view==='approvals'?canReview():!!getIdentity();}
+function permitted(view){return ['chat','runs','knowledge'].includes(view)?canRead():view==='approvals'?canReview():!!getIdentity();}
 function clearDetails(){for(const id of ['run-list','run-detail','approval-list','approval-detail','config-values'])$(id).replaceChildren();runStamp=null;proposalStamp=null;runListStamp=null;approvalListStamp=null;}
 function show(view){
   if(!names[view] || (getIdentity()&&!permitted(view)))view=canRead()?'runs':canReview()?'approvals':'observability';
@@ -31,13 +32,14 @@ async function action(fn){
 }
 function mutation(label,handler){const el=button(label,()=>action(handler));el.dataset.action='true';return el;}
 function timestamp(value){return value?new Date(value).toLocaleString('es'):'—';}
-function runPath(run){return run.kind==='rag'?'knowledge/agent/runs/'+run.run_id:'runs/'+run.run_id;}
+function runPath(run){if(run.kind==='reader')return 'knowledge/reader/runs/'+run.run_id;return run.kind==='rag'?'knowledge/agent/runs/'+run.run_id:'runs/'+run.run_id;}
 function renderRuns(items){
   const stamp=JSON.stringify([items,selectedRun?.run_id,busy]);if(stamp===runListStamp)return;runListStamp=stamp;
   const root=$('run-list');root.replaceChildren();
   if(!items.length)root.append(text('p','Todavía no hay ejecuciones tuyas.','hint'));
   for(const item of items){
-    const el=row(item.kind==='rag'?'DevOps + RAG':'Lectura DevOps',item.status);
+    if(item.kind==='chat')continue;
+    const el=row(item.kind==='reader'?'LLM · Lectura documental':item.kind==='rag'?'DevOps + RAG':'Lectura DevOps',item.status);
     el.append(text('p',timestamp(item.created_at)+' · '+item.run_id.slice(0,8),'metadata'));
     el.append(button(selectedRun?.run_id===item.run_id?'Seleccionada':'Ver evidencia',()=>{selectedRun=item;runStamp=null;$('run-detail').replaceChildren();refresh().catch(error=>message(error.message,true));}));
     root.append(el);
@@ -46,7 +48,7 @@ function renderRuns(items){
 function renderRun(run,summary){
   const stamp=JSON.stringify([run,summary.trace_id,busy]);if(stamp===runStamp)return;runStamp=stamp;
   const root=$('run-detail');root.replaceChildren();
-  const el=row(summary.kind==='rag'?'DevOps + conocimiento':'Lectura DevOps',run.status);
+  const el=row(summary.kind==='reader'?'Qwen3 · Lectura documental':summary.kind==='rag'?'DevOps + conocimiento':'Lectura DevOps',run.status);
   el.append(text('p',run.run_id,'metadata'));
   const facts=text('div','','facts');
   for(const [label,value] of [['Decisiones',run.model_calls+' / '+run.limits_snapshot.model_calls],['Herramientas',run.tool_calls+' / '+run.limits_snapshot.tool_calls],['Tiempo activo',Number(run.active_seconds).toFixed(2)+' s']]){
@@ -55,6 +57,8 @@ function renderRun(run,summary){
   el.append(facts);
   if(run.job)el.append(text('p','Worker: '+run.job.status+' · Intentos: '+run.job.attempts,'metadata'));
   if(run.outcome_code)el.append(text('p','Resultado: '+run.outcome_code,'warning-note'));
+  if(run.read_request)el.append(text('p','Pregunta: '+run.read_request.query,'fragment'));
+  if(run.assessment?.answer_status)el.append(text('p','Lectura: '+run.assessment.answer_status,'metadata'));
   if(run.answer)el.append(text('p',run.answer,'fragment'));
   const actions=text('div','','action-row');
   const recover=run.job&&(run.job.status==='PAUSED'||run.job.status==='RUNNING'&&!run.job.lease_active);
@@ -75,7 +79,7 @@ function renderRun(run,summary){
   root.append(el);
 }
 async function refreshRuns(){
-  const result=await api('console/runs');runs=result.runs;renderRuns(runs);
+  const result=await api('console/runs');runs=result.runs.filter(item=>item.kind!=='chat');renderRuns(runs);
   if(!selectedRun&&runs.length)selectedRun=runs[0];
   if(!selectedRun)return;
   const current=runs.find(item=>item.run_id===selectedRun.run_id)||selectedRun;selectedRun=current;
@@ -149,6 +153,7 @@ async function refresh(){
   try{
     const current=await api('me');if(version!==sessionVersion)return;
     if(JSON.stringify(current.identity)!==JSON.stringify(getIdentity())){disconnect();message('Los permisos cambiaron. Seleccioná de nuevo la credencial para actualizar la consola.');return;}
+    if(active==='chat'&&canRead())await refreshChat();
     if(active==='runs'&&canRead())await refreshRuns();
     if(active==='knowledge'&&canRead())await refreshKnowledge();
     if(active==='approvals'&&canReview())await refreshApprovals();
@@ -156,6 +161,7 @@ async function refresh(){
   }finally{refreshing=false;}
 }
 window.addEventListener('harness-session',()=>{
+  $('reader-query').value='';$('reader-pause').checked=false;
   sessionVersion++;selectedRun=null;selectedProposal=null;runs=[];config=null;proposalKeys.clear();clearDetails();
   if(!getIdentity())return;
   const version=sessionVersion;
@@ -166,13 +172,14 @@ window.addEventListener('harness-session',()=>{
   }).catch(error=>message(error.message,true));
 });
 $('run-kind').addEventListener('change',()=>{
-  const rag=$('run-kind').value==='rag';$('ci-scenario').disabled=rag;$('ci-pause').disabled=rag;
-  $('run-help').textContent=rag?'Jira → GitHub → Jenkins → RAG. Consulta fija de demostración; cinco decisiones y cuatro herramientas.':'Modelo y proveedores DevOps simulados. Cuatro decisiones; presupuesto persistido y recuperación.';
+  const rag=$('run-kind').value==='rag',reader=$('run-kind').value==='reader';$('ci-scenario').disabled=rag||reader;$('ci-pause').disabled=rag||reader;
+  $('reader-question').hidden=!reader;$('reader-query').required=reader;
+  $('run-help').textContent=reader?'Qwen3 local elige una búsqueda y responde con evidencia o se abstiene. Solo lectura documental; no ejecuta acciones.':rag?'Jira → GitHub → Jenkins → RAG. Consulta fija de demostración; cinco decisiones y cuatro herramientas.':'Modelo y proveedores DevOps simulados. Cuatro decisiones; presupuesto persistido y recuperación.';
 });
 $('launch-form').addEventListener('submit',event=>{event.preventDefault();action(async()=>{
-  const rag=$('run-kind').value==='rag';
-  const started=await api(rag?'knowledge/agent/runs':'runs',rag?{}:{scenario:$('ci-scenario').value,pause_at:$('ci-pause').value});
-  selectedRun={run_id:started.run_id,kind:rag?'rag':'ci'};message('Lectura admitida. El worker de ejecuciones continuará el recorrido.');
+  const rag=$('run-kind').value==='rag',reader=$('run-kind').value==='reader';
+  const started=await api(reader?'knowledge/reader/runs':rag?'knowledge/agent/runs':'runs',reader?{query:$('reader-query').value,pause_after_search:$('reader-pause').checked}:rag?{}:{scenario:$('ci-scenario').value,pause_at:$('ci-pause').value});
+  selectedRun={run_id:started.run_id,kind:reader?'reader':rag?'rag':'ci'};message('Lectura admitida. El worker de ejecuciones continuará el recorrido.');
 });});
 setInterval(()=>{if(!document.hidden)refresh().catch(error=>message(error.message,true));},5000);
 const initial=location.hash.slice(1)||(location.pathname==='/knowledge'?'knowledge':'runs');

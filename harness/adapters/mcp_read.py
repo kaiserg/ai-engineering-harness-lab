@@ -67,7 +67,7 @@ class MCPRead:
         if result.is_error:
             error = payload.get('error') if type(payload) is dict else None
             code = error.get('code') if type(error) is dict else None
-            if type(code) is not str or code not in {'FORBIDDEN', 'NOT_FOUND', 'INVALID_ARGUMENT', 'UNKNOWN_TOOL', 'UPSTREAM_UNAVAILABLE'}:
+            if type(code) is not str or code not in {'FORBIDDEN', 'NOT_FOUND', 'INVALID_ARGUMENT', 'UNKNOWN_TOOL', 'UPSTREAM_UNAVAILABLE','PROVIDER_RATE_LIMITED'}:
                 code = 'MCP_TOOL_ERROR'
             raise ContractError(code)
         if (type(payload) is not dict or set(payload) != {'schema_version', 'data', 'source_id'}

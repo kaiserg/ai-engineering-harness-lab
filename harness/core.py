@@ -12,6 +12,7 @@ from .contracts import (ContractError, FinalAnswer, Identity, LLMPort, PolicyPor
 
 
 def authorize_run(run, identity, policy):
+    if hasattr(policy,"authorize_context"):policy.authorize_context(run,identity)
     for result in run.results:
         policy.authorize(identity, result_call(result))
         if hasattr(policy,'authorize_result'):policy.authorize_result(identity,result)
@@ -41,12 +42,15 @@ class Limits:
 
 class Harness:
     def __init__(self, llm: LLMPort, policy: PolicyPort, tools: dict[str, ToolPort],
-                 store: RunStore, limits=Limits(), checkpoint_hook=None, clock=monotonic, execution_profile='fake-jira-v1', finalizer=None, partial_tools=()):
+                 store: RunStore, limits=Limits(), checkpoint_hook=None, clock=monotonic, execution_profile='fake-jira-v1', finalizer=None, partial_tools=(), decision_finalizer=None):
         self.llm, self.policy, self.tools, self.store = llm, policy, dict(tools), store
         self.limits, self.checkpoint_hook = limits, checkpoint_hook
         self.clock = clock
         self.execution_profile = execution_profile
         self.finalizer = finalizer
+        self.decision_finalizer = decision_finalizer
+        if finalizer is not None and decision_finalizer is not None:
+            raise ValueError("Elegir un único finalizador.")
         self.partial_tools = frozenset(partial_tools)
         if not self.partial_tools <= OPTIONAL_READ_ERRORS.keys():
             raise ValueError('Herramienta sin política de fallo parcial.')
@@ -64,11 +68,14 @@ class Harness:
             raise ContractError('CONFIG_CHANGED')
 
     async def _decide(self,run,identity):
+        context_validator=getattr(self.policy,'authorize_context',None)
+        if context_validator:await asyncio.to_thread(context_validator,run,identity)
         validator=getattr(self.policy,'authorize_result',None)
         if validator:
             for result in run.results:await asyncio.to_thread(validator,identity,result)
         decision=await self.llm.decide(deepcopy(run),tuple(name for name in
             self.policy.visible_tools(identity) if name in self.tools))
+        if context_validator:await asyncio.to_thread(context_validator,run,identity)
         if validator and isinstance(decision,FinalAnswer):
             for result in run.results:await asyncio.to_thread(validator,identity,result)
         return decision  # Revalidaciones incluidas en la reserva/timeout persistidos del modelo.
@@ -177,6 +184,8 @@ class Harness:
                         raise ContractError('INVALID_MODEL_OUTPUT')
                     if self.finalizer is not None:
                         decision, run.assessment = self.finalizer(deepcopy(run))
+                    if self.decision_finalizer is not None:
+                        decision, run.assessment = self.decision_finalizer(deepcopy(run), decision)
                     run.answer, run.status, run.checkpoint = decision.text, RunState.COMPLETED, 'READY'
                     return save(run)
                 if not isinstance(decision, ToolCall):

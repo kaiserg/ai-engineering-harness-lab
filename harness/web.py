@@ -65,7 +65,7 @@ class RunService:
 
     def load(self, run_id):
         run = self.store.load(str(run_id), self.identity)
-        if run.execution_profile=='mcp-devops-rag-v1':raise ContractError('NOT_FOUND')
+        if run.execution_profile in ('mcp-devops-rag-v1','ollama-qwen3-4b-document-reader-v1','ollama-qwen3-4b-document-chat-v1','ollama-qwen3-4b-jira-demo-chat-v1','ollama-qwen3-4b-github-demo-chat-v1','ollama-qwen3-4b-github-public-chat-v1') or run.execution_profile.startswith('ollama-qwen3-4b-jira-cloud-chat-v1:'):raise ContractError('NOT_FOUND')
         authorize_run(run, self.identity, ReadOnlyPolicy())
         return run
 
@@ -80,7 +80,7 @@ class RunService:
     def recent(self):
         visible = []
         for run in self.store.list(self.identity):
-            if run.execution_profile=='mcp-devops-rag-v1':continue
+            if run.execution_profile in ('mcp-devops-rag-v1','ollama-qwen3-4b-document-reader-v1','ollama-qwen3-4b-document-chat-v1','ollama-qwen3-4b-jira-demo-chat-v1','ollama-qwen3-4b-github-demo-chat-v1','ollama-qwen3-4b-github-public-chat-v1') or run.execution_profile.startswith('ollama-qwen3-4b-jira-cloud-chat-v1:'):continue
             try:
                 authorize_run(run, self.identity, ReadOnlyPolicy())
             except ContractError:
@@ -259,7 +259,7 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
     @app.exception_handler(ContractError)
     async def domain_error(request, error):
         status = (503 if error.code in ('IDENTITY_UNAVAILABLE','DATABASE_UNAVAILABLE','CHROMA_UNAVAILABLE','EMBEDDING_UNAVAILABLE','EMBEDDING_MODEL_UNAVAILABLE') else 401 if error.code=='UNAUTHENTICATED' else 413 if error.code=='PAYLOAD_TOO_LARGE' else 404 if error.code == 'NOT_FOUND' else 403 if error.code == 'FORBIDDEN' else
-                  429 if error.code in ('QUEUE_FULL','KNOWLEDGE_QUOTA') else 422 if error.code in ('INVALID_PAUSE','INVALID_DOCUMENT','INVALID_QUERY','EMPTY_TEXT') else 409)
+                  429 if error.code in ('QUEUE_FULL','KNOWLEDGE_QUOTA','PROVIDER_RATE_LIMITED') else 422 if error.code in ('INVALID_PAUSE','INVALID_DOCUMENT','INVALID_QUERY','EMPTY_TEXT','CHAT_LIMIT') else 409)
         return JSONResponse({'error': error.code}, status_code=status)
 
     @app.exception_handler(Exception)
@@ -307,6 +307,10 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
         knowledge_routes(app)
         from .rag_api import install_routes as rag_routes
         rag_routes(app)
+        from .reader_api import install_routes as reader_routes
+        reader_routes(app)
+        from .chat_api import install_routes as chat_routes
+        chat_routes(app)
         from .console_api import install_routes as console_routes
         console_routes(app,SCENARIOS)
 

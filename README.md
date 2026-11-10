@@ -2,7 +2,7 @@
 
 Este proyecto es un laboratorio educativo para construir y operar una aplicación de agentes de IA orientada a DevOps. Permite investigar un ticket, consultar su pull request y comparar la revisión del código con la de un build; también permite cargar documentos y buscar información con sus fuentes. Desde una consola web podés seguir las ejecuciones, revisar propuestas de acciones, aprobarlas con otro usuario e investigar fallos con trazas y métricas.
 
-El objetivo es aprender cómo construir el sistema que rodea al agente —el *harness*—: permisos, límites de tiempo y llamadas, estado persistido y recuperación tras interrupciones. Se espera que cada ejecución deje evidencia de lo que hizo y respete esos controles al retomarse. Actualmente Jira, GitHub y Jenkins usan datos simulados, y las decisiones del agente están guionadas; la búsqueda semántica sí utiliza un modelo local real. Las acciones aprobadas también son simuladas.
+El objetivo es aprender cómo construir el sistema que rodea al agente —el *harness*—: permisos, límites de tiempo y llamadas, estado persistido y recuperación tras interrupciones. Se espera que cada ejecución deje evidencia de lo que hizo y respete esos controles al retomarse. Actualmente Jira, GitHub y Jenkins usan datos simulados, y sus decisiones están guionadas; el lector documental y la búsqueda semántica utilizan modelos locales reales. Las acciones aprobadas también son simuladas.
 
 **Para probarlo con el entorno ya preparado**, ejecutá desde esta carpeta:
 
@@ -10,15 +10,31 @@ El objetivo es aprender cómo construir el sistema que rodea al agente —el *ha
 uv run python -m harness.web --storage postgres --user-auth --port 8005
 ```
 
-Abrí [la consola](http://127.0.0.1:8005/console) y seleccioná tu archivo de credencial local. En **Ejecuciones**, elegí **DevOps** y pulsá **Iniciar lectura**: cuando termine, verás el estado del ticket, la evidencia del PR y el resultado de comparar el build con su revisión. En **Conocimiento**, podés cargar un documento, indexarlo y escribir una pregunta para obtener fragmentos relevantes con sus citas. Esta búsqueda todavía no redacta una respuesta con un LLM.
+Abrí [la consola](http://127.0.0.1:8005/console) y seleccioná tu archivo de credencial local. En **Ejecuciones**, elegí **DevOps** y pulsá **Iniciar lectura**: cuando termine, verás el estado del ticket, la evidencia del PR y el resultado de comparar el build con su revisión. En **Conocimiento**, podés cargar un documento, indexarlo y escribir una pregunta para obtener fragmentos relevantes con sus citas. Esa búsqueda muestra fragmentos. Para una respuesta con Qwen3 o una abstención, elegí **Ejecuciones → LLM local · Lectura documental** y escribí tu pregunta.
 
 La consola necesita los servicios y workers del laboratorio en marcha. Si es tu primera vez, seguí la [guía paso a paso](docs/guide.md); para preparar la consola actual y sus workers, consultá el [capítulo 49](docs/guide/49-m5e-consola-autenticada-unificada.md), y para la búsqueda semántica, el [capítulo 50](docs/guide/50-m5f-embeddings-semanticos-y-evaluaciones.md). Más abajo están los comandos para levantar los servicios y emitir la credencial.
 
-El destino del laboratorio es una experiencia conversacional: plantear un problema a un LLM que utilice herramientas bajo estos controles. El adaptador LLM real y el chat con historial siguen pendientes; las trazas y la auditoría serán parte de esa experiencia. El [capítulo 51](docs/guide/51-m5g-preguntas-sin-respuesta.md) explica esta diferencia y los primeros casos de preguntas sin evidencia suficiente.
+El destino del laboratorio es una experiencia conversacional: plantear un problema a un LLM que utilice herramientas bajo estos controles. El lector documental y el chat con historial ya conectan un LLM real bajo los controles existentes. Jira ya tiene lectura desde el chat por MCP, con demostración y conexión Cloud; las trazas y la auditoría acompañan cada ejecución. GitHub ya tiene lectura de PRs desde el chat (demo/públicos); Jenkins y la planificación entre herramientas siguen pendientes. El [capítulo 51](docs/guide/51-m5g-preguntas-sin-respuesta.md) explica esta diferencia y los primeros casos de preguntas sin evidencia suficiente.
 
 ## Alcance y estado del laboratorio
 
-Etapa 2: construir y operar un harness DevOps desde su core. El recorrido local incluye lectura persistida, MCP Python/Go, API/frontend, workers con leases/fencing, identidad de servicio/TLS y observabilidad. **M4a–M4h agregan acciones aprobadas sobre un proveedor ficticio**, recuperación sin reenvío y evaluaciones deterministas. El modelo y los backends DevOps siguen simulados: no requiere API keys ni llamadas pagadas. M5a–M5f agregan inventario PostgreSQL, Chroma, ingestión durable, RAG en el core y una consola autenticada común. M5f añade embeddings semánticos locales fijados y comparación de retrieval. LLM de generación real, OIDC y conectores reales siguen pendientes. Los cuatro documentos iniciales distinguen la arquitectura objetivo del estado actual en [la matriz de cierre](docs/status.md).
+Etapa 2: construir y operar un harness DevOps desde su core. El recorrido local incluye lectura persistida, MCP Python/Go, API/frontend, workers con leases/fencing, identidad de servicio/TLS y observabilidad. **M4a–M4h agregan acciones aprobadas sobre un proveedor ficticio**, recuperación sin reenvío y evaluaciones deterministas. El modelo de los recorridos DevOps y sus backends siguen simulados; el lector documental usa Qwen3 real. No requiere API keys ni llamadas pagadas. M5a–M5f agregan inventario PostgreSQL, Chroma, ingestión durable, RAG en el core y una consola autenticada común. M5f añade embeddings semánticos locales fijados y comparación de retrieval. M7a conecta Qwen3 local para lectura documental, respuestas citadas y abstención; M7b agrega chat e historial persistido; M7c conecta Jira al LLM y Jira Cloud en lectura. M7d incorpora GitHub conversacional de lectura (demo/público); Jenkins conversacional, OIDC y más conectores reales siguen pendientes. Los cuatro documentos iniciales distinguen la arquitectura objetivo del estado actual en [la matriz de cierre](docs/status.md).
+
+## Chat con historial persistido
+
+Abrí [Chat](http://127.0.0.1:8005/console#chat), ingresá con tu credencial y creá una conversación. Preguntá «¿Quién coordina Atlas?» y luego «¿Y su correo?». Qwen3 usa el contexto anterior, busca documentos autorizados y responde con citas o se abstiene. El historial se guarda en PostgreSQL; cada mensaje conserva su run y permite recuperación. Ver el [capítulo 53](docs/guide/53-m7b-chat-e-historial-persistido.md).
+
+## GitHub desde el chat
+
+Elegí **GitHub · demostración** para consultar `demo/atlas#42` o **GitHub · PR público** para un PR real autorizado, sin token. Qwen3 reúne estado y revisión con citas; conserva historial, permisos y recuperación. Ver [capítulo 55](docs/guide/55-m7d-github-desde-el-chat.md) para habilitar un repositorio, cuota y evaluaciones. No hace merge ni deduce que CI pasó.
+
+## Jira desde el chat
+
+Antes de crear una conversación, elegí **Jira · demostración** para consultar DEV-123 o **Jira Cloud · cuenta conectada** para leer un ticket de tu sitio. Qwen3 propone la lectura MCP; el harness conserva permisos, evidencia y recuperación. Ver el [capítulo 54](docs/guide/54-m7c-jira-desde-el-chat.md) para configurar el token local, alcances y evaluación. Solo lectura; el LLM no puede modificar tickets.
+
+## LLM local de lectura documental
+
+El nuevo recorrido usa Qwen3 por Ollama, sin API key: una pregunta, búsqueda autorizada y respuesta con citas o abstención. Comparte el core, API, worker y recuperación existentes. Ver el [capítulo 52](docs/guide/52-m7a-llm-local-de-lectura.md) para preparación, límites y evaluación con `uv run python scripts/evaluate_reader.py`.
 
 ## Consola autenticada unificada
 

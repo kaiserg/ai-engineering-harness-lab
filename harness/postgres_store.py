@@ -104,23 +104,27 @@ class PostgresRunStore:
     def _create(self, run, identity, *, job_id=None, pause_at='none', max_pending=None):
         check_new(run, identity)
         with self._database() as db:
-            if max_pending is not None:
-                self._limit(max_pending)
-                db.execute('SELECT pg_advisory_xact_lock(hashtext(%s))',
-                           (f'admission:{self.schema}:{identity.workspace_id}:{identity.actor_id}',))
-                count = db.execute("SELECT count(*) AS n FROM jobs WHERE workspace_id = %s AND requested_by = %s AND status IN ('PENDING','RUNNING')",
-                                   (identity.workspace_id, identity.actor_id)).fetchone()['n']
-                if count >= max_pending:
-                    raise ContractError('QUEUE_FULL')
-            try:
-                self._insert(db, run)
-                if job_id is not None:
-                    from .telemetry import carrier
-                    db.execute('INSERT INTO jobs (job_id, run_id, workspace_id, requested_by, pause_at, producer_traceparent) VALUES (%s, %s, %s, %s, %s, %s)',
-                               (job_id, run.run_id, run.workspace_id, run.requested_by, pause_at, carrier()))
-            except psycopg.errors.UniqueViolation:
-                raise ContractError('CONFLICT') from None
+            self._admit(db,run,identity,job_id=job_id,pause_at=pause_at,max_pending=max_pending)
         return decode(encode(run))
+
+    def _admit(self,db,run,identity,*,job_id=None,pause_at="none",max_pending=None):
+        check_new(run,identity)
+        if max_pending is not None:
+            self._limit(max_pending)
+            db.execute('SELECT pg_advisory_xact_lock(hashtext(%s))',
+                       (f'admission:{self.schema}:{identity.workspace_id}:{identity.actor_id}',))
+            count = db.execute("SELECT count(*) AS n FROM jobs WHERE workspace_id = %s AND requested_by = %s AND status IN ('PENDING','RUNNING')",
+                               (identity.workspace_id, identity.actor_id)).fetchone()['n']
+            if count >= max_pending:
+                raise ContractError('QUEUE_FULL')
+        try:
+            self._insert(db, run)
+            if job_id is not None:
+                from .telemetry import carrier
+                db.execute('INSERT INTO jobs (job_id, run_id, workspace_id, requested_by, pause_at, producer_traceparent) VALUES (%s, %s, %s, %s, %s, %s)',
+                           (job_id, run.run_id, run.workspace_id, run.requested_by, pause_at, carrier()))
+        except psycopg.errors.UniqueViolation:
+            raise ContractError('CONFLICT') from None
 
     def load(self, run_id, identity):
         with self._database() as db:

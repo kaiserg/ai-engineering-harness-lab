@@ -4,9 +4,9 @@ Esta guía registra lo que ya funciona y explica cómo se relaciona con el dise�
 
 Para distinguir lo implementado del diseño objetivo, consultá la [matriz de cierre de etapa 2](status.md), con hitos, escenarios y pendientes.
 
-La guía se divide ahora en **51 capítulos**, uno por paso, dentro de `docs/guide/`. El contenido anterior se conserva en su orden de construcción; la [matriz de estado](status.md) distingue lo actual de los pasos históricos.
+La guía se divide ahora en **55 capítulos**, uno por paso, dentro de `docs/guide/`. El contenido anterior se conserva en su orden de construcción; la [matriz de estado](status.md) distingue lo actual de los pasos históricos.
 
-**Último paso:** [M5g · Preguntas sin respuesta y camino al chat](guide/51-m5g-preguntas-sin-respuesta.md).
+**Último paso:** [M7d · GitHub desde el chat por MCP](guide/55-m7d-github-desde-el-chat.md).
 
 ## Índice
 
@@ -215,3 +215,19 @@ Los encabezados conservan las anclas de la guía anterior para mantener sus enla
 ## M5g Preguntas sin respuesta y camino al chat
 
 [51. Leer el capítulo](guide/51-m5g-preguntas-sin-respuesta.md).
+
+## M7a LLM local de lectura, respuestas y abstención
+
+[52. Leer el capítulo](guide/52-m7a-llm-local-de-lectura.md).
+
+## M7b Chat e historial persistido
+
+[53. Leer el capítulo](guide/53-m7b-chat-e-historial-persistido.md).
+
+## M7c Jira desde el chat por MCP
+
+[54. Leer el capítulo](guide/54-m7c-jira-desde-el-chat.md).
+
+## M7d GitHub desde el chat por MCP
+
+[55. Leer el capítulo](guide/55-m7d-github-desde-el-chat.md).

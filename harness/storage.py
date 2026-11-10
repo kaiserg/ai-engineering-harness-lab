@@ -33,7 +33,27 @@ def check_failures(run):
         seen.add(failure.call.call_id)
 
 
+def check_read_request(run):
+    if run.execution_profile=='ollama-qwen3-4b-document-reader-v1':
+        data=run.read_request
+        if (type(data) is not dict or set(data)!={'query'} or type(data['query']) is not str
+                or not data['query'].strip() or len(data['query'])>2000):raise ContractError('INVALID_CHECKPOINT')
+    elif run.execution_profile in ('ollama-qwen3-4b-document-chat-v1','ollama-qwen3-4b-jira-demo-chat-v1','ollama-qwen3-4b-github-demo-chat-v1','ollama-qwen3-4b-github-public-chat-v1') or run.execution_profile.startswith('ollama-qwen3-4b-jira-cloud-chat-v1:'):
+        data=run.read_request
+        from uuid import UUID
+        try:
+            if (type(data) is not dict or set(data)!={'query','conversation_id','history_run_ids'}
+                    or type(data['query']) is not str or not data['query'].strip() or len(data['query'])>2000
+                    or type(data['history_run_ids']) is not list or len(data['history_run_ids'])>3
+                    or len(set(data['history_run_ids']))!=len(data['history_run_ids'])):raise ValueError()
+            for identifier in [data['conversation_id'],*data['history_run_ids']]:
+                if type(identifier) is not str or str(UUID(identifier))!=identifier:raise ValueError()
+        except (ValueError,TypeError,KeyError):raise ContractError('INVALID_CHECKPOINT') from None
+    elif run.read_request is not None:raise ContractError('INVALID_CHECKPOINT')
+
+
 def check_new(run, identity):
+    check_read_request(run)
     check_owner(run, identity)
     check_timing(run)
     if run.tool_failures:
@@ -56,6 +76,7 @@ def check_update(current, run, identity, recovering=False):
             or run.recovered_time_seconds < current.recovered_time_seconds
             or run.timing_version != current.timing_version
             or run.execution_profile != current.execution_profile
+            or run.read_request != current.read_request
             or (current.assessment is not None and run.assessment != current.assessment)
             or run.model_calls < current.model_calls or run.tool_calls < current.tool_calls
             or (current.limits_snapshot and run.limits_snapshot != current.limits_snapshot)
@@ -111,6 +132,7 @@ def decode(payload):
         if data['pending_call'] is not None:
             data['pending_call'] = ToolCall(**data['pending_call'])
         run = Run(**data)
+        check_read_request(run)
         check_timing(run)
         check_failures(run)
         return run

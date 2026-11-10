@@ -90,6 +90,7 @@ class Run:
     execution_profile: str = 'fake-jira-v1'
     assessment: dict | None = None
     tool_failures: list[ToolFailure] = field(default_factory=list)
+    read_request: dict | None = None
 
 
 def issue_arguments(arguments: dict) -> dict:

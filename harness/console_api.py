@@ -7,7 +7,9 @@ from .knowledge import CONFIG
 from .embeddings import PROFILES
 from .rag_agent import PROFILE
 from .rag_api import RAG_LIMITS
+from .llm_reader import PROFILE as READER_PROFILE,LIMITS as READER_LIMITS,MODEL,MODEL_DIGEST
 from .telemetry import carrier
+from .chat import PROFILE as CHAT_PROFILE
 
 
 def principal(request,*,read=False):
@@ -33,7 +35,7 @@ def install_routes(app,scenarios):
             saved=row.pop('previous_traceparent')
             parent=carrier(saved) if saved else None
             row['trace_id']=parent.split('-')[1] if parent else None
-            row['kind']='rag' if row['profile']==PROFILE else 'ci'
+            row['kind']='chat' if row['profile']==CHAT_PROFILE or row['profile'].startswith(('ollama-qwen3-4b-jira-demo-chat-v1','ollama-qwen3-4b-jira-cloud-chat-v1:','ollama-qwen3-4b-github-demo-chat-v1','ollama-qwen3-4b-github-public-chat-v1')) else 'reader' if row['profile']==READER_PROFILE else 'rag' if row['profile']==PROFILE else 'ci'
         return {'runs':rows}
 
     @app.get('/api/console/config')
@@ -46,8 +48,8 @@ def install_routes(app,scenarios):
                 active=db.execute('''SELECT k.configuration,k.index_id FROM knowledge_inventory i
                     JOIN knowledge_indexes k ON k.index_id=i.active_index WHERE i.workspace_id=%s''',(identity.workspace_id,)).fetchone()
         return {'workspace':identity.workspace_id,'identity_mode':'local-user-credential',
-                'model':'scripted','embeddings':active['configuration'] if active else CONFIG,
-                'active_index':active['index_id'] if active else None,'embedding_profiles':PROFILES,'limits':{'ci':asdict(Limits()),'rag':asdict(RAG_LIMITS)},
+                'model':{'ci':'scripted','rag':'scripted','reader':{'provider':'ollama-local','model':MODEL,'digest':MODEL_DIGEST,'profile':READER_PROFILE}},'embeddings':active['configuration'] if active else CONFIG,
+                'active_index':active['index_id'] if active else None,'embedding_profiles':PROFILES,'limits':{'ci':asdict(Limits()),'rag':asdict(RAG_LIMITS),'reader':asdict(READER_LIMITS)},
                 'ingestion':{'max_file_bytes':5*1024*1024,'max_documents':20,'max_chunks':1000,
                     'max_attempts':3,'deadline_seconds':300},
                 'scenarios':[{'id':key,'title':value[0]} for key,value in scenarios.items()],
