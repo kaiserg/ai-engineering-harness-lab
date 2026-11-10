@@ -1,6 +1,18 @@
 # AI Engineering Harness Lab
 
-Etapa 2: construir y operar un harness DevOps desde su core. El recorrido local incluye lectura persistida, MCP Python/Go, API/frontend, workers con leases/fencing, identidad de servicio/TLS y observabilidad. **M4a–M4h agregan acciones aprobadas sobre un proveedor ficticio**, recuperación sin reenvío y evaluaciones deterministas. El modelo y los backends DevOps siguen simulados: no requiere API keys ni llamadas pagadas. Usuarios reales, RAG y conectores reales siguen pendientes. Los cuatro documentos iniciales distinguen la arquitectura objetivo del estado actual en [la matriz de cierre](docs/status.md).
+Etapa 2: construir y operar un harness DevOps desde su core. El recorrido local incluye lectura persistida, MCP Python/Go, API/frontend, workers con leases/fencing, identidad de servicio/TLS y observabilidad. **M4a–M4h agregan acciones aprobadas sobre un proveedor ficticio**, recuperación sin reenvío y evaluaciones deterministas. El modelo y los backends DevOps siguen simulados: no requiere API keys ni llamadas pagadas. M5a–M5e agregan inventario PostgreSQL, Chroma, ingestión durable, RAG léxico en el core y una consola autenticada común. LLM/embeddings semánticos, OIDC y conectores reales siguen pendientes. Los cuatro documentos iniciales distinguen la arquitectura objetivo del estado actual en [la matriz de cierre](docs/status.md).
+
+## Consola autenticada unificada
+
+Abrí [Harness Lab](http://127.0.0.1:8005/console): ejecuciones CI/RAG, conocimiento, aprobaciones, observabilidad y configuración en una sola página con sesión común. La API de usuarios se ejecuta separada de los servicios/fixtures de Compose. Con el entorno base y el binario Jenkins del host ya preparados según la guía:
+
+```bash
+uv run python -m harness.web --storage postgres --user-auth --port 8005
+# En otra terminal: emitir sesión y seleccionar en la consola el archivo que informa.
+uv run python scripts/users.py issue --actor reader-demo --workspace workspace-alpha
+```
+
+Los workers de runs, ingestión y escrituras siguen siendo procesos independientes. La consola conserva sus controles y consulta el estado persistido; la navegación no cambia el usuario ni guarda el bearer en el navegador. Configuración es de solo lectura y Jaeger/Grafana mantienen sus interfaces locales compartidas. Ver [guía 49](docs/guide/49-m5e-consola-autenticada-unificada.md) para comandos, roles y decisiones. El siguiente paso es embeddings semánticos.
 
 ## Levantar la app completa con Compose
 
@@ -417,4 +429,58 @@ El cierre remoto impide un envío tardío; una búsqueda vacía no basta. Resolu
 uv run python scripts/evaluate_authenticated.py
 ```
 
-Cuatro casos completos por HTTP ASGI, workers y MCP: envío aprobado, revocación antes del envío, recuperación con ambos actores revocados y cierre manual. Schemas/proveedores temporales; no usa sesiones ni historial de la app. Reporte ignorado: `data/runtime/evals/authenticated-latest.json`. Con las líneas base anteriores suma 21 evaluaciones. Ver [guía, sección 44](docs/guide.md#cierre-autenticado-evaluaciones-y-checkpoint-antes-de-m5). El siguiente hito funcional es M5/RAG; login web/OIDC y otros pendientes productivos no bloquean su inicio.
+Cuatro casos completos por HTTP ASGI, workers y MCP: envío aprobado, revocación antes del envío, recuperación con ambos actores revocados y cierre manual. Schemas/proveedores temporales; no usa sesiones ni historial de la app. Reporte ignorado: `data/runtime/evals/authenticated-latest.json`. Con las líneas base anteriores suma 21 evaluaciones. Ver [guía, sección 44](docs/guide.md#cierre-autenticado-evaluaciones-y-checkpoint-antes-de-m5). M5/RAG comienza en el incremento siguiente; login web/OIDC y otros pendientes productivos no bloquean su inicio.
+
+## M5a · Chroma e inventario de conocimiento
+
+```bash
+uv run python scripts/knowledge.py up
+uv run python scripts/users.py issue --actor reader-demo --workspace workspace-alpha
+# Usar el session_id devuelto; la credencial queda en runtime privado.
+SESSION_ID=PEGA_AQUI_EL_SESSION_ID
+uv run python scripts/user_knowledge.py --session "$SESSION_ID" upload examples/knowledge/atlas-release.md
+uv run python scripts/user_knowledge.py --session "$SESSION_ID" rebuild
+uv run python scripts/user_knowledge.py --session "$SESSION_ID" search "responsable release Atlas"
+uv run python scripts/users.py revoke "$SESSION_ID"
+```
+
+Recorrido por consola local con acceso de desarrollo a PostgreSQL, todavía sin API/UI RAG. Chroma escucha solo en `127.0.0.1:8012`, persiste en volumen y almacena vectores/IDs; PostgreSQL conserva texto, permisos y versión activa. Un fallo no reemplaza la versión anterior; las retiradas se filtran inmediatamente. Embeddings léxicos deterministas, sin modelo semántico, API keys ni generación de respuestas. La ingestión durable y su integración con el agente son siguientes incrementos. Ver [guía 45](docs/guide.md#m5a-chroma-como-servicio-e-inventario-de-conocimiento) para decisiones, permisos, retirada y pruebas.
+
+## M5b · Cola y worker de ingestión
+
+Con una sesión de operador admití una reconstrucción y ejecutá un consumidor independiente:
+
+```bash
+REQUEST_KEY=$(uv run python -c 'from uuid import uuid4; print(uuid4())')
+uv run python scripts/user_knowledge.py --session "$SESSION_ID" enqueue --key "$REQUEST_KEY"
+uv run python -m harness.knowledge_worker --actor reader-demo --workspace workspace-alpha --once
+uv run python scripts/user_knowledge.py --session "$SESSION_ID" job JOB_ID
+```
+
+La clave repetida conserva job/plazo/intentos. La recuperación tras interrupción crea un candidato nuevo bajo lease/fencing; la activación y DONE se confirman juntos. El worker consulta permisos actuales sin conservar el bearer de admisión. Revisiones obsoletas y retirada impiden activar. Guía [46](docs/guide.md#m5b-tipo-de-rag-e-ingestión-durable) incluye ejecución, fallos, límites y clasificación: base simple de recuperación textual, cercana a naive RAG, todavía sin generación ni embeddings semánticos; no implementa por ahora Hybrid/Graph/HyDE/Corrective/Adaptive/Agentic/Multimodal RAG.
+
+## M5c · Biblioteca e ingestión en pantalla
+
+Abrí [Conocimiento](http://127.0.0.1:8005/knowledge) en la API de usuarios:
+
+```bash
+uv run python -m harness.web --storage postgres --user-auth --port 8005
+uv run python scripts/users.py issue --actor reader-demo --workspace workspace-alpha
+# En otra terminal, para consumir los trabajos que admita ese usuario:
+uv run python -m harness.knowledge_worker --actor reader-demo --workspace workspace-alpha
+```
+
+Seleccioná el archivo privado de la sesión en la pantalla, cargá MD/TXT y poné la indexación en cola. La página muestra documentos, trabajos persistidos, intentos y citas; no ejecuta la ingestión. La credencial permanece solo en memoria del navegador. Carga HTTP idempotente, permisos/workspace actuales y recuperación del worker conservados. Guía [47](docs/guide/47-m5c-api-y-frontend-de-documentos-e-ingestion.md).
+
+La [guía principal](docs/guide.md) es ahora un índice de capítulos dentro de `docs/guide/`, con el recorrido histórico y navegación anterior/siguiente.
+
+## M5d · Recuperación documental como herramienta del core
+
+Con documentos ya indexados y el worker de lecturas autenticado ejecutándose:
+
+```bash
+uv run python scripts/rag_agent.py --session "$SESSION_ID" start
+uv run python scripts/rag_agent.py --session "$SESSION_ID" status RUN_ID
+```
+
+Perfil opt-in CI+RAG, con Jira/GitHub/Jenkins por MCP y `knowledge_search` nativo. Cinco decisiones y cuatro herramientas en el mismo core, con límites persistidos y autorización actual del contexto guardado. Reutiliza citas al recuperar; retirada o acceso revocado bloquean su entrega. Modelo guionado y consulta fija, embeddings léxicos; no demuestra todavía un LLM real decidiendo cuándo buscar. La biblioteca existente conserva su función y estos runs se consultan por API/CLI. Guía [48](docs/guide/48-m5d-rag-como-herramienta-del-core.md).

@@ -25,6 +25,15 @@ x-app: &app
   stop_grace_period: 45s
 
 services:
+  chroma:
+    image: chromadb/chroma:1.5.9
+    profiles: [knowledge]
+    environment:
+      ANONYMIZED_TELEMETRY: "false"
+      CHROMA_OTEL_GRANULARITY: none
+    ports: ["127.0.0.1:8012:8000"]
+    volumes: ["chroma_data:/data"]
+    restart: unless-stopped
   api:
     <<: *app
     build: .
@@ -173,6 +182,7 @@ services:
       retries: 30
     restart: unless-stopped
 volumes:
+  chroma_data:
   alertmanager_data:
   prometheus_data:
   grafana_data:

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Harness Lab · Consola</title><link rel="icon" href="/assets/favicon.svg"><link rel="stylesheet" href="/assets/console.css">
+<script type="module" src="/assets/console.js"></script></head>
+<body>
+<aside class="sidebar"><a href="/console" class="brand"><span class="brand-mark">h<span>·</span></span><span>Harness Lab<small>ENGINEERING WORKSPACE</small></span></a>
+<div class="space-label">Consola autenticada <span class="version">M5e</span></div>
+<nav id="console-nav" aria-label="Navegación principal">
+<button type="button" data-view="runs">◈ <span>Ejecuciones</span></button>
+<button type="button" data-view="knowledge">◇ <span>Conocimiento</span></button>
+<button type="button" data-view="approvals">▱ <span>Aprobaciones</span></button>
+<button type="button" data-view="observability">◉ <span>Observabilidad</span></button>
+<button type="button" data-view="config">⚙ <span>Configuración</span></button></nav>
+<p class="sidebar-note">Una sesión. El mismo core.<br>Permisos verificados en cada acción.</p></aside>
+<main class="console-main"><header class="console-top"><span>Workspace / <strong id="section-title">Ejecuciones</strong></span><span class="pill">Laboratorio local</span></header>
+<section class="console-intro"><p class="eyebrow">AGENT OPERATIONS / LAB 02</p><h1>Tu harness.<br>Un solo lugar.</h1><p>Evidencia, conocimiento y decisiones con un recorrido común.</p></section>
+<section class="panel" aria-labelledby="session-title"><div class="section-header"><h2 id="session-title">Tu sesión local</h2><span class="pill">Credencial en memoria</span></div>
+<p>Seleccioná el archivo emitido por el laboratorio. La sesión se comparte entre las secciones de esta página.</p>
+<label for="credential">Archivo de credencial (.json)</label><input id="credential" type="file" accept=".json,application/json">
+<div class="session-line"><span id="identity">Sin sesión</span><button id="logout" type="button" hidden>Salir de esta pantalla</button></div></section>
+<p id="message" class="message" role="status" aria-live="polite">Seleccioná una credencial para comenzar.</p>
+<div id="workspace" hidden>
+<section id="view-runs" data-page="runs"><div class="grid"><section class="panel"><p class="eyebrow">01 / EJECUTAR</p><h2>Una nueva lectura</h2>
+<form id="launch-form"><label for="run-kind">Recorrido</label><select id="run-kind"><option value="ci">DevOps · Jira, GitHub y Jenkins</option><option value="rag">DevOps + conocimiento · RAG</option></select>
+<label for="ci-scenario">Escenario CI</label><select id="ci-scenario"><option value="matching">Evidencia coincidente</option></select>
+<label for="ci-pause">Pausa didáctica</label><select id="ci-pause"><option value="none">Sin pausa</option><option value="jira">Después de Jira</option><option value="github">Después de GitHub</option><option value="jenkins">Después de Jenkins</option><option value="failure">Después del fallo de Jenkins</option></select>
+<p id="run-help" class="hint">Modelo y proveedores DevOps simulados. Las herramientas y el estado son reales.</p>
+<button type="submit" id="launch">Iniciar lectura</button></form></section>
+<section class="panel"><p class="eyebrow">TU ACTIVIDAD</p><h2>Ejecuciones recientes</h2><p class="hint">Últimas 30 de tu usuario y workspace.</p><div id="run-list" class="rows"></div></section></div>
+<section class="panel"><p class="eyebrow">02 / REVISAR</p><h2>Detalle y evidencia</h2><div id="run-detail"><p class="hint">Seleccioná una ejecución.</p></div></section></section>
+<section id="view-knowledge" data-page="knowledge" hidden>      <div class="grid">
+        <section class="panel"><p class="eyebrow">01 / CARGAR</p><h2>Agregar un documento</h2>
+          <form id="upload-form"><label for="document">Archivo Markdown o texto</label><input id="document" type="file" accept=".md,.txt,text/plain,text/markdown" required>
+            <p class="hint">UTF-8 · hasta 5 MiB · privado para tu usuario en este workspace.</p>
+            <button id="upload" type="submit">Cargar documento</button>
+          </form><p class="hint">La carga conserva el original. Para incluirlo en búsquedas, poné una indexación en cola.</p>
+        </section>
+        <section class="panel"><p class="eyebrow">02 / INDEXAR</p><h2>Preparar la búsqueda</h2>
+          <p>El trabajo usa la versión actual de la biblioteca. El índice anterior sigue disponible hasta que el nuevo esté listo.</p>
+          <button id="enqueue" type="button">Poner indexación en cola</button>
+          <p class="hint">Un worker independiente procesa la cola. Si permanece pendiente, comprobá que el worker de tu usuario esté ejecutándose.</p>
+        </section>
+      </div>
+      <section class="panel"><div class="section-header"><div><p class="eyebrow">BIBLIOTECA</p><h2>Documentos</h2></div><button id="refresh" type="button">Actualizar</button></div>
+        <p class="hint">Últimos 100 documentos permitidos. Retirar conserva el historial y excluye el documento de la búsqueda.</p><div id="documents" class="rows"></div>
+      </section>
+      <section class="panel"><p class="eyebrow">INGESTIÓN</p><h2>Estado de tus trabajos</h2><p class="hint">Últimos 50 · actualización cada 3 segundos mientras la página está visible. El estado sobrevive a cerrar esta pantalla.</p><div id="jobs" class="rows"></div></section>
+      <section class="panel"><p class="eyebrow">03 / COMPROBAR</p><h2>Buscar con cita</h2>
+        <p class="hint">Recuperación léxica de demostración. Los fragmentos son contenido de documentos; todavía no hay respuesta generada por un modelo.</p>
+        <form id="search-form" class="search"><label for="query">Consulta</label><input id="query" maxlength="2000" required placeholder="responsable release Atlas"><button type="submit">Buscar</button></form><div id="results" class="rows"></div>
+      </section></section>
+<section id="view-approvals" data-page="approvals" hidden><section class="panel"><p class="eyebrow">REVISIÓN Y ESCRITURAS SIMULADAS</p><h2>Propuestas y operaciones</h2>
+<p>La decisión se vincula a una intención y revisión exactas. El solicitante y el aprobador deben ser actores distintos.</p><div id="approval-list" class="rows"></div></section>
+<section class="panel"><h2>Revisar intención</h2><div id="approval-detail"><p class="hint">Seleccioná una propuesta.</p></div></section></section>
+<section id="view-observability" data-page="observability" hidden><section class="panel"><p class="eyebrow">OPERACIÓN</p><h2>Observabilidad</h2><p>El detalle de una ejecución permite abrir su traza cuando esté disponible.</p>
+<div class="monitor-grid"><a href="http://127.0.0.1:16686" target="_blank" rel="noopener noreferrer"><strong>Jaeger ↗</strong><span>Orden, duración y relaciones entre llamadas.</span></a><a href="http://127.0.0.1:3003/d/harness-overview" target="_blank" rel="noopener noreferrer"><strong>Grafana ↗</strong><span>Métricas y alertas del laboratorio.</span></a><a href="http://127.0.0.1:9090/alerts" target="_blank" rel="noopener noreferrer"><strong>Prometheus ↗</strong><span>Reglas y estado de alertas.</span></a></div>
+<p class="hint">Monitores locales compartidos del laboratorio. Estas herramientas conservan su propia interfaz y no aplican los permisos por workspace de esta consola.</p></section></section>
+<section id="view-config" data-page="config" hidden><section class="panel"><p class="eyebrow">VALORES EFECTIVOS</p><h2>Configuración</h2><p>Consulta de perfiles, límites y recuperación. Los cambios siguen versionados en el proyecto.</p><div id="config-values" class="rows"></div></section></section>
+</div><footer>Harness Lab · Core y contratos compartidos · Entorno local de aprendizaje</footer></main></body></html>

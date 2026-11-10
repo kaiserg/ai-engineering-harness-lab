@@ -23,11 +23,11 @@ ERROR_CODES = frozenset({
     'MCP_ISSUER_UNAVAILABLE', 'MCP_SCHEMA_MISMATCH', 'MCP_TOOL_ERROR', 'MCP_UNAUTHENTICATED',
     'MCP_UNAVAILABLE', 'NOT_FOUND', 'POSTGRES_NOT_CONFIGURED', 'QUEUE_FULL',
     'RUN_BUSY', 'RUN_DEADLINE_EXCEEDED', 'STORAGE_SCHEMA_UNSUPPORTED', 'TIME_BUDGET_UNKNOWN',
-    'UNKNOWN_TOOL', 'UNSAFE_RECOVERY', 'UPSTREAM_TIMEOUT', 'UPSTREAM_UNAVAILABLE',
+    'EVIDENCE_REVOKED','INVALID_VECTOR_RESULT','CHROMA_UNAVAILABLE','STALE_INDEX','EMPTY_TEXT','INCOMPATIBLE_INDEX','UNKNOWN_TOOL', 'UNSAFE_RECOVERY', 'UPSTREAM_TIMEOUT', 'UPSTREAM_UNAVAILABLE',
     'WORKER_ATTEMPTS_EXCEEDED', 'WORK_NOT_CLAIMED','OPERATION_BUSY','OPERATION_CLOSED','DISPATCH_EXPIRED',
     'SIMULATOR_UNAVAILABLE','SIMULATOR_STATE_LOST','STALE_PRECONDITION','UNKNOWN_EFFECT','WRITE_ATTEMPTS_EXHAUSTED',
 })
-TOOLS = {'jira_get_issue','github_get_pull_request','jenkins_get_build','jenkins_request_tests','jenkins_find_request','jenkins_current_revision','jenkins_close_request'}
+TOOLS = {'knowledge_search','jira_get_issue','github_get_pull_request','jenkins_get_build','jenkins_request_tests','jenkins_find_request','jenkins_current_revision','jenkins_close_request'}
 
 
 def configure(service, *, provider=None):
@@ -180,6 +180,9 @@ class TraceHTTP:
         name=('api.runs.create' if path=='/api/runs' else 'api.runs.resume' if re.fullmatch(
             r'/api/runs/[0-9a-f-]{36}/resume',path) else None) if self.service=='harness-api' else (
             'identity.token' if path=='/token' else 'mcp.http' if path.rstrip('/')=='/mcp' else None)
+        if self.service=='harness-api' and not name:
+            if path=='/api/knowledge/agent/runs':name='api.rag.create'
+            elif re.fullmatch(r'/api/knowledge/agent/runs/[0-9a-f-]{36}/resume',path):name='api.rag.resume'
         if self.service=='harness-api' and not name:
             match=re.fullmatch(r'/api/operations/([0-9a-f-]{36})/(dispatch|reconcile|resolution|resolution/confirm)',path)
             if match:name='api.write.'+{'dispatch':'submit','reconcile':'lookup','resolution':'resolution.prepare','resolution/confirm':'resolution.confirm'}[match[2]]

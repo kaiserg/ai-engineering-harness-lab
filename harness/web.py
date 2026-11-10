@@ -65,6 +65,7 @@ class RunService:
 
     def load(self, run_id):
         run = self.store.load(str(run_id), self.identity)
+        if run.execution_profile=='mcp-devops-rag-v1':raise ContractError('NOT_FOUND')
         authorize_run(run, self.identity, ReadOnlyPolicy())
         return run
 
@@ -79,6 +80,7 @@ class RunService:
     def recent(self):
         visible = []
         for run in self.store.list(self.identity):
+            if run.execution_profile=='mcp-devops-rag-v1':continue
             try:
                 authorize_run(run, self.identity, ReadOnlyPolicy())
             except ContractError:
@@ -256,8 +258,8 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
 
     @app.exception_handler(ContractError)
     async def domain_error(request, error):
-        status = (503 if error.code=='IDENTITY_UNAVAILABLE' else 404 if error.code == 'NOT_FOUND' else 403 if error.code == 'FORBIDDEN' else
-                  429 if error.code == 'QUEUE_FULL' else 422 if error.code == 'INVALID_PAUSE' else 409)
+        status = (503 if error.code in ('IDENTITY_UNAVAILABLE','DATABASE_UNAVAILABLE','CHROMA_UNAVAILABLE') else 401 if error.code=='UNAUTHENTICATED' else 413 if error.code=='PAYLOAD_TOO_LARGE' else 404 if error.code == 'NOT_FOUND' else 403 if error.code == 'FORBIDDEN' else
+                  429 if error.code in ('QUEUE_FULL','KNOWLEDGE_QUOTA') else 422 if error.code in ('INVALID_PAUSE','INVALID_DOCUMENT','INVALID_QUERY','EMPTY_TEXT') else 409)
         return JSONResponse({'error': error.code}, status_code=status)
 
     @app.exception_handler(Exception)
@@ -271,7 +273,7 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
     @app.get('/api/config')
     async def config(request:Request):
         return {'workspace':request.state.identity.workspace_id if user_auth else 'Laboratorio local', 'identity_mode': 'local-user-credential' if user_auth else 'development-fixture', 'execution_mode': 'worker' if storage == 'postgres' else 'local',
-                'approvals_demo': approvals_demo, 'authenticated_proposals':user_auth, 'authenticated_dispatch':user_auth, 'write_worker': write_worker, 'scenarios': [{'id': key, 'title': value[0], 'description': value[1]} for key, value in SCENARIOS.items()]}
+                'approvals_demo': approvals_demo, 'authenticated_proposals':user_auth, 'authenticated_dispatch':user_auth, 'knowledge':user_auth, 'write_worker': write_worker, 'scenarios': [{'id': key, 'title': value[0], 'description': value[1]} for key, value in SCENARIOS.items()]}
 
     @app.get('/api/runs')
     async def recent(request: Request):
@@ -301,6 +303,18 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
         install_routes(app)
         from .authenticated_resolutions import install_routes as resolution_routes
         resolution_routes(app)
+        from .knowledge_api import install_routes as knowledge_routes
+        knowledge_routes(app)
+        from .rag_api import install_routes as rag_routes
+        rag_routes(app)
+        from .console_api import install_routes as console_routes
+        console_routes(app,SCENARIOS)
+
+        @app.get('/console')
+        async def console_page():return FileResponse(ROOT/'frontend/console.html')
+
+        @app.get('/knowledge')
+        async def knowledge_page():return FileResponse(ROOT/'frontend/console.html')
 
     if approvals_demo:
         from .approval_web import install_routes
@@ -308,7 +322,7 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
 
     @app.get('/')
     async def index():
-        if user_auth:return {'mode':'authenticated-user-api','authenticated_dispatch':True,'frontend_login_connected':False,'identity_endpoint':'/api/me'}
+        if user_auth:return FileResponse(ROOT/'frontend/console.html')
         return FileResponse(ROOT / 'frontend/index.html')
 
     from .telemetry import TraceHTTP

@@ -14,6 +14,7 @@ from .contracts import (ContractError, FinalAnswer, Identity, LLMPort, PolicyPor
 def authorize_run(run, identity, policy):
     for result in run.results:
         policy.authorize(identity, result_call(result))
+        if hasattr(policy,'authorize_result'):policy.authorize_result(identity,result)
     for failure in run.tool_failures:
         policy.authorize(identity, failure.call)
     if run.pending_call:
@@ -61,6 +62,16 @@ class Harness:
             raise ContractError('TIME_BUDGET_UNKNOWN')
         if run.limits_snapshot and run.limits_snapshot != asdict(self.limits):
             raise ContractError('CONFIG_CHANGED')
+
+    async def _decide(self,run,identity):
+        validator=getattr(self.policy,'authorize_result',None)
+        if validator:
+            for result in run.results:await asyncio.to_thread(validator,identity,result)
+        decision=await self.llm.decide(deepcopy(run),tuple(name for name in
+            self.policy.visible_tools(identity) if name in self.tools))
+        if validator and isinstance(decision,FinalAnswer):
+            for result in run.results:await asyncio.to_thread(validator,identity,result)
+        return decision  # Revalidaciones incluidas en la reserva/timeout persistidos del modelo.
 
     async def resume(self, run_id: str, identity: Identity):
         # Recuperación local: el operador debe haber detenido el proceso anterior.
@@ -157,8 +168,7 @@ class Harness:
                 allowance = min(allowance, timer.remaining(run))
                 with operation('model'), span('model.decide',values={'run.id':run.run_id}):
                     decision = await asyncio.wait_for(
-                        self.llm.decide(deepcopy(run), tuple(name for name in
-                            self.policy.visible_tools(identity) if name in self.tools)), allowance)
+                        self._decide(run,identity), allowance)
                 timer.charge(run)
                 run.pending_time_seconds = 0.0
                 timer.remaining(run)

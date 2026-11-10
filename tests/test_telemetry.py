@@ -106,3 +106,17 @@ class TelemetryTests(unittest.IsolatedAsyncioTestCase):
             'arguments':'PRIVATE_SENTINEL','payload_hash':'PRIVATE_SENTINEL','actor_id':'PRIVATE_SENTINEL'})
         self.assertEqual(set(values),{'operation.id','write.phase','write.state'})
         self.assertEqual(t.attributes({'write.phase':'PRIVATE_SENTINEL','write.state':'PRIVATE_SENTINEL'}),{})
+
+    async def test_rag_admission_has_fixed_span_and_does_not_capture_request_data(self):
+        captured=[]
+        async def app(scope,receive,send):
+            captured.append(t.carrier())
+            await send({'type':'http.response.start','status':202,'headers':[]})
+            await send({'type':'http.response.body','body':b'{}'})
+        async def receive():return {'type':'http.request','body':b'PRIVATE_SENTINEL'}
+        async def send(message):pass
+        await t.TraceHTTP(app,'harness-api')({'type':'http','method':'POST',
+            'path':'/api/knowledge/agent/runs','headers':[(b'authorization',b'Bearer PRIVATE_SENTINEL')]},receive,send)
+        spans=self.exporter.get_finished_spans()
+        self.assertIsNotNone(captured[0]);self.assertEqual(spans[0].name,'api.rag.create')
+        self.assertNotIn('PRIVATE_SENTINEL',str(dict(spans[0].attributes)))

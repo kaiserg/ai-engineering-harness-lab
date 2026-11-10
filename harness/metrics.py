@@ -8,7 +8,7 @@ import threading
 from prometheus_client import CollectorRegistry, Counter, Histogram, Gauge, start_http_server
 from prometheus_client.core import GaugeMetricFamily
 
-TOOLS={'jira_get_issue','github_get_pull_request','jenkins_get_build'}
+TOOLS={'knowledge_search','jira_get_issue','github_get_pull_request','jenkins_get_build'}
 ATTEMPTS={'completed','failed','paused','cancelled','lease_lost'}
 BUCKETS=(.005,.01,.025,.05,.1,.25,.5,1,2.5,5,10,30,60,120)
 

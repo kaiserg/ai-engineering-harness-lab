@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Conocimiento · Harness Lab</title><link rel="icon" href="/assets/favicon.svg">
+  <link rel="stylesheet" href="/assets/knowledge.css"><script src="/assets/knowledge.js" type="module"></script>
+</head>
+<body>
+  <header><a class="brand" href="/knowledge">h<span>·</span> <strong>Harness Lab</strong></a><span class="pill">Conocimiento / M5c</span></header>
+  <main>
+    <section class="intro"><p class="eyebrow">DEL DOCUMENTO A LA EVIDENCIA</p><h1>Una biblioteca.<br>Versiones que podés seguir.</h1><p>Cargá documentos, prepará su índice y seguí cada intento de ingestión.</p></section>
+    <section class="panel" aria-labelledby="session-title"><h2 id="session-title">Tu sesión local</h2>
+      <p>Seleccioná el archivo de credencial emitido por el laboratorio. Se lee en este navegador y la sesión se conserva solo mientras esta página esté abierta.</p>
+      <label for="credential">Archivo de credencial (.json)</label><input id="credential" type="file" accept=".json,application/json">
+      <div class="session-line"><span id="identity">Sin sesión</span><button id="logout" type="button" hidden>Salir de esta pantalla</button></div>
+    </section>
+    <p id="message" class="message" role="status" aria-live="polite">Seleccioná una credencial para comenzar.</p>
+    <section id="workspace" hidden>
+      <div class="grid">
+        <section class="panel"><p class="eyebrow">01 / CARGAR</p><h2>Agregar un documento</h2>
+          <form id="upload-form"><label for="document">Archivo Markdown o texto</label><input id="document" type="file" accept=".md,.txt,text/plain,text/markdown" required>
+            <p class="hint">UTF-8 · hasta 5 MiB · privado para tu usuario en este workspace.</p>
+            <button id="upload" type="submit">Cargar documento</button>
+          </form><p class="hint">La carga conserva el original. Para incluirlo en búsquedas, poné una indexación en cola.</p>
+        </section>
+        <section class="panel"><p class="eyebrow">02 / INDEXAR</p><h2>Preparar la búsqueda</h2>
+          <p>El trabajo usa la versión actual de la biblioteca. El índice anterior sigue disponible hasta que el nuevo esté listo.</p>
+          <button id="enqueue" type="button">Poner indexación en cola</button>
+          <p class="hint">Un worker independiente procesa la cola. Si permanece pendiente, comprobá que el worker de tu usuario esté ejecutándose.</p>
+        </section>
+      </div>
+      <section class="panel"><div class="section-header"><div><p class="eyebrow">BIBLIOTECA</p><h2>Documentos</h2></div><button id="refresh" type="button">Actualizar</button></div>
+        <p class="hint">Últimos 100 documentos permitidos. Retirar conserva el historial y excluye el documento de la búsqueda.</p><div id="documents" class="rows"></div>
+      </section>
+      <section class="panel"><p class="eyebrow">INGESTIÓN</p><h2>Estado de tus trabajos</h2><p class="hint">Últimos 50 · actualización cada 3 segundos mientras la página está visible. El estado sobrevive a cerrar esta pantalla.</p><div id="jobs" class="rows"></div></section>
+      <section class="panel"><p class="eyebrow">03 / COMPROBAR</p><h2>Buscar con cita</h2>
+        <p class="hint">Recuperación léxica de demostración. Los fragmentos son contenido de documentos; todavía no hay respuesta generada por un modelo.</p>
+        <form id="search-form" class="search"><label for="query">Consulta</label><input id="query" maxlength="2000" required placeholder="responsable release Atlas"><button type="submit">Buscar</button></form><div id="results" class="rows"></div>
+      </section>
+    </section>
+  </main><footer>Harness Lab · Entorno local de aprendizaje</footer>
+</body>
+</html>

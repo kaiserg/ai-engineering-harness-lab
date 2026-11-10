@@ -24,8 +24,10 @@ class Execution:
                 if any(hasattr(adapter, 'connections') for adapter in self.adapters.values()) else None)
 
 
-def compose(profile, identity, store, *, limits=Limits(), checkpoint_hook=None, delay=0, denied=False):
-    ci = parse_ci_profile(profile)
+def compose(profile, identity, store, *, limits=Limits(), checkpoint_hook=None, delay=0, denied=False, knowledge=None):
+    from .rag_agent import PROFILE,KnowledgePolicy,KnowledgeTool,RAGScriptedLLM,finalize_rag
+    rag=profile==PROFILE
+    ci = parse_ci_profile('mcp-devops-ci-v2:matching' if rag else profile)
     if ci is None and profile not in {'fake-jira-v1', 'mcp-jira-fixture-v1', 'mcp-devops-read-v1'}:
         raise ContractError('CONFIG_CHANGED')
     linked = ci is not None or profile == 'mcp-devops-read-v1'
@@ -57,6 +59,19 @@ def compose(profile, identity, store, *, limits=Limits(), checkpoint_hook=None, 
     name = 'jira_delete_issue' if denied else 'jira_get_issue'
     model = (AdversarialCILLM(name, delay, attack=ci[3]) if ci and ci[0] in ('mcp-devops-ci-v3', 'mcp-devops-ci-v4')
              else model_type(name, delay))
-    return Execution(Harness(model, ReadOnlyPolicy(), tools, store, limits=limits,
+    policy=ReadOnlyPolicy()
+    if rag:
+        if knowledge is None:
+            from .postgres_store import PostgresRunStore
+            from .user_identity import UserIdentityStore
+            from .knowledge import Knowledge
+            if not isinstance(store,PostgresRunStore) or store.schema=='harness_lab':raise ContractError('CONFIG_CHANGED')
+            directory=UserIdentityStore(PostgresRunStore(store._dsn))
+            knowledge=Knowledge(store,lambda:directory.resolve(identity.actor_id,identity.workspace_id))
+        model=RAGScriptedLLM(name,delay)
+        adapters['knowledge']=tools['knowledge_search']=KnowledgeTool(knowledge)
+        policy=KnowledgePolicy(knowledge)
+        finalizer,partial_tools=finalize_rag,()
+    return Execution(Harness(model, policy, tools, store, limits=limits,
                      checkpoint_hook=checkpoint_hook, execution_profile=profile,
                      finalizer=finalizer, partial_tools=partial_tools), adapters)

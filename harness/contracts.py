@@ -118,13 +118,23 @@ def build_arguments(arguments):
     return dict(arguments)
 
 
-READ_TOOLS = frozenset({'jira_get_issue', 'github_get_pull_request', 'jenkins_get_build'})
+READ_TOOLS = frozenset({'jira_get_issue', 'github_get_pull_request', 'jenkins_get_build','knowledge_search'})
 
 # Solo estas ausencias se pueden representar en un informe parcial.
 OPTIONAL_READ_ERRORS = {'jenkins_get_build': frozenset({'UPSTREAM_UNAVAILABLE', 'UPSTREAM_TIMEOUT'})}
 
 
+def knowledge_arguments(arguments):
+    if (type(arguments) is not dict or set(arguments)!={'query','limit'}
+            or type(arguments['query']) is not str or not arguments['query'].strip()
+            or len(arguments['query'])>2000 or type(arguments['limit']) is not int
+            or not 1<=arguments['limit']<=3):
+        raise ContractError('INVALID_ARGUMENT')
+    return dict(arguments)
+
+
 def tool_arguments(name, arguments):
+    if name=='knowledge_search':return knowledge_arguments(arguments)
     if name == 'jira_get_issue':
         return issue_arguments(arguments)
     if name == 'github_get_pull_request':
@@ -138,7 +148,8 @@ def result_call(result):
     # Reautorizar únicamente el recurso identificado por cada resultado guardado.
     keys = {'jira_get_issue': ('issue_key',),
             'github_get_pull_request': ('repository', 'pull_number'),
-            'jenkins_get_build': ('job', 'build_number')}.get(result.tool_name)
+            'jenkins_get_build': ('job', 'build_number'),
+            'knowledge_search':('query','limit')}.get(result.tool_name)
     if keys is None or type(result.data) is not dict:
         raise ContractError('INVALID_TOOL_OUTPUT')
     return ToolCall(result.tool_name, tool_arguments(result.tool_name,
