@@ -140,7 +140,7 @@ async function refreshApprovals(){
 }
 function renderConfig(data){
   const root=$('config-values');root.replaceChildren();
-  for(const [title,value] of [['Identidad',{workspace:data.workspace,mode:data.identity_mode}],['Modelo y recuperación',{model:data.model,embeddings:data.embeddings}],['Límites por perfil',data.limits],['Ingestión',data.ingestion]]){
+  for(const [title,value] of [['Identidad',{workspace:data.workspace,mode:data.identity_mode}],['Modelo y recuperación',{model:data.model,embeddings:data.embeddings,active_index:data.active_index,available:data.embedding_profiles}],['Límites por perfil',data.limits],['Ingestión',data.ingestion]]){
     const el=row(title,'Solo lectura');el.append(text('pre',JSON.stringify(value,null,2)));root.append(el);
   }
 }
@@ -152,7 +152,7 @@ async function refresh(){
     if(active==='runs'&&canRead())await refreshRuns();
     if(active==='knowledge'&&canRead())await refreshKnowledge();
     if(active==='approvals'&&canReview())await refreshApprovals();
-    if(active==='config')renderConfig(config||await api('console/config'));
+    if(active==='config')renderConfig(await api('console/config'));
   }finally{refreshing=false;}
 }
 window.addEventListener('harness-session',()=>{

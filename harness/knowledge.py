@@ -2,30 +2,21 @@
 import asyncio
 from hashlib import sha256
 import json
-import math
 from pathlib import Path
 import re
-import unicodedata
 from uuid import uuid4
 from .contracts import ContractError
 from .chroma_vectors import ChromaVectors
 from .proposals import uuid_text
 
-CONFIG = 'lexical-sha256-v1:256:cosine:chunk800-overlap100'
-MAX_BYTES = 5*1024*1024
+from .embeddings import LEXICAL_CONFIG,lexical,provider_for
+
+CONFIG=LEXICAL_CONFIG
+MAX_BYTES=5*1024*1024
+embed=lexical  # Compatibilidad para el baseline y sus pruebas anteriores.
 
 
 def digest(text):return sha256(text.encode('utf-8')).hexdigest()
-
-
-def embed(text):
-    """Demo léxica reproducible; no representa similitud semántica ni llama a un LLM."""
-    words = re.findall(r'[a-z0-9]+', unicodedata.normalize('NFKD',text.casefold()).encode('ascii','ignore').decode())
-    vector = [0.0]*256
-    for word in words:vector[int(sha256(word.encode()).hexdigest()[:8],16)%256] += 1
-    norm = math.sqrt(sum(v*v for v in vector))
-    if not norm:raise ContractError('EMPTY_TEXT')
-    return [v/norm for v in vector]
 
 
 def split(text):
@@ -40,12 +31,14 @@ def validate(filename, text, readers):
         or type(readers) is not list or len(readers)>20
         or any(type(r) is not str or not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}',r) for r in readers)):
         raise ContractError('INVALID_DOCUMENT')
-    embed(text)
+    if not any(ch.isalnum() for ch in text):raise ContractError('EMPTY_TEXT')
 
 
 class Knowledge:
-    def __init__(self, runs, authenticate, vectors=None):
+    def __init__(self, runs, authenticate, vectors=None, *, configuration=CONFIG, check=None):
         self.runs, self.authenticate = runs, authenticate
+        self.configuration=configuration
+        self.embedding=provider_for(configuration,check)
         self.vectors = vectors if vectors is not None else ChromaVectors()
         with runs._database() as db:
             db.execute('SELECT pg_advisory_xact_lock(hashtext(%s))',('knowledge:'+runs.schema,))
@@ -141,14 +134,14 @@ class Knowledge:
             if not chunks:raise ContractError('EMPTY_INVENTORY')
             if len(chunks)>1000:raise ContractError('KNOWLEDGE_QUOTA')
             db.execute('INSERT INTO knowledge_indexes(index_id,workspace_id,revision,configuration,state,collection_name) VALUES (%s,%s,%s,%s,%s,%s)',
-                       (identifier,identity.workspace_id,inventory['revision'],CONFIG,'BUILDING',collection))
+                       (identifier,identity.workspace_id,inventory['revision'],self.configuration,'BUILDING',collection))
             for chunk in chunks:
                 db.execute('INSERT INTO knowledge_chunks VALUES (%s,%s,%s,%s,%s,%s)',
                            (identifier,chunk['chunk_id'],chunk['document_id'],chunk['ordinal'],chunk['content'],digest(chunk['content'])))
             if guard:guard(db,index_id=identifier)
         try:
             self.identity(True)
-            self.vectors.build(collection,chunks,embed)  # Ninguna transacción PG permanece abierta durante HTTP.
+            self.vectors.build(collection,chunks,self.embedding)  # Ninguna transacción PG permanece abierta durante HTTP.
             current = self.identity(True)
             if (current.workspace_id,current.actor_id)!=(identity.workspace_id,identity.actor_id):raise ContractError('FORBIDDEN')
             with self.runs._database() as db:
@@ -164,33 +157,37 @@ class Knowledge:
             with self.runs._database() as db:
                 db.execute("UPDATE knowledge_indexes SET state='FAILED' WHERE index_id=%s AND state='BUILDING'",(identifier,))
             raise
-        return {'index_id':identifier,'state':'READY','chunks':len(chunks),'configuration':CONFIG}
+        return {'index_id':identifier,'state':'READY','chunks':len(chunks),'configuration':self.configuration}
 
     def prepare_search(self, query, limit=3):
         if type(query) is not str or len(query)>2000 or type(limit) is not int or not 1<=limit<=5:
             raise ContractError('INVALID_QUERY')
-        vector = embed(query)
+        if not query.strip():raise ContractError('EMPTY_TEXT')
         identity = self.identity()
         with self.runs._database() as db:
             index = db.execute('''SELECT k.* FROM knowledge_indexes k JOIN knowledge_inventory i
                 ON i.active_index=k.index_id WHERE i.workspace_id=%s AND k.state='READY' ''',(identity.workspace_id,)).fetchone()
             if not index:return {'index_id':None,'matches':[]}
-            if index['configuration']!=CONFIG:raise ContractError('INCOMPATIBLE_INDEX')
+            provider_for(index['configuration'])  # Rechazar espacios desconocidos; no inferir dimensiones.
             eligible = db.execute("SELECT document_id FROM knowledge_documents WHERE workspace_id=%s AND state='ACTIVE' AND (owner=%s OR %s=ANY(readers))",
                                   (identity.workspace_id,identity.actor_id,identity.actor_id)).fetchall()
-        return identity,index,vector,[r['document_id'] for r in eligible]
+        return identity,index,[r['document_id'] for r in eligible]
 
     def search(self,query,limit=3):
         prepared=self.prepare_search(query,limit)
         if isinstance(prepared,dict):return prepared
-        identity,index,vector,documents=prepared
+        identity,index,documents=prepared
+        if not documents:return self.finish_search(identity,index,[])
+        vector=provider_for(index['configuration']).query(query)
         candidates=self.vectors.query(index['collection_name'],vector,documents,limit)
         return self.finish_search(identity,index,candidates)
 
     async def asearch(self,query,limit=3):
         prepared=await asyncio.to_thread(self.prepare_search,query,limit)
         if isinstance(prepared,dict):return prepared
-        identity,index,vector,documents=prepared
+        identity,index,documents=prepared
+        if not documents:return await asyncio.to_thread(self.finish_search,identity,index,[])
+        vector=await provider_for(index['configuration']).aquery(query)
         candidates=await self.vectors.aquery(index['collection_name'],vector,documents,limit)
         return await asyncio.to_thread(self.finish_search,identity,index,candidates)
 

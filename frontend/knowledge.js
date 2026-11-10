@@ -1,11 +1,11 @@
 'use strict';
 const $ = id => document.getElementById(id);
 let token = null, identity = null, generation = 0, polling = false;
-let uploadIntent = null, enqueueKey = null;
+let uploadIntent = null, enqueueKey = null, enqueueProfile = null;
 const labels = {PENDING:'Pendiente',RUNNING:'En proceso',DONE:'Lista',FAILED:'Fallida'};
 function message(text, error=false) { $('message').textContent=text; $('message').classList.toggle('error',error); }
 function clearSession() {
-  generation++; token=null; identity=null; uploadIntent=null; enqueueKey=null;
+  generation++; token=null; identity=null; uploadIntent=null; enqueueKey=null; enqueueProfile=null;
   $('workspace').hidden=true; $('logout').hidden=true; $('identity').textContent='Sin sesión';
   for (const id of ['credential','document','query']) $(id).value='';
   for (const id of ['documents','jobs','results']) $(id).replaceChildren();
@@ -50,6 +50,7 @@ function jobs(items) {
     if(['PENDING','RUNNING'].includes(job.status) && job.deadline_expired)state='Plazo agotado · pendiente de cierre';
     const el=row('Indexación · '+job.job_id.slice(0,8),state);
     el.append(text('p',job.job_id+'\nIntentos: '+job.attempts+'/3 · Revisión: '+job.inventory_revision+'\nPlazo: '+new Date(job.deadline_at).toLocaleString(),'metadata'));
+    if(job.configuration)el.append(text('p','Embeddings: '+(job.configuration.startsWith('ollama:')?'semánticos · Qwen3 local':job.configuration.startsWith('lexical-')?'léxicos · baseline':'configuración no reconocida'),'metadata'));
     if(job.index_id)el.append(text('p','Índice: '+job.index_id,'metadata'));
     if(job.last_error)el.append(text('p','Último error: '+job.last_error,'metadata'));
     root.append(el);
@@ -94,9 +95,10 @@ $('upload-form').addEventListener('submit',async event=>{
     message('Documento cargado. Podés cargar más archivos o poner la indexación en cola.');await refresh();
   }catch(error){message(error.message,true);}finally{button.disabled=!identity?.roles.includes('operator');$('document').disabled=false;}
 });
+if($('embedding-profile'))$('embedding-profile').addEventListener('change',()=>{enqueueKey=null;enqueueProfile=null;});
 $('enqueue').addEventListener('click',async()=>{
   const button=$('enqueue');button.disabled=true;
-  try {enqueueKey=enqueueKey || crypto.randomUUID();const job=await api('knowledge/jobs',{request_key:enqueueKey});enqueueKey=null;
+  try {enqueueKey=enqueueKey || crypto.randomUUID();enqueueProfile=enqueueProfile || $('embedding-profile')?.value || 'lexical';const job=await api('knowledge/jobs',{request_key:enqueueKey,embedding_profile:enqueueProfile});enqueueKey=null;enqueueProfile=null;
     message('Trabajo '+job.job_id.slice(0,8)+' admitido. El worker independiente continuará la ingestión.');await refresh();
   }catch(error){message(error.message,true);}finally{button.disabled=!identity?.roles.includes('operator');}
 });

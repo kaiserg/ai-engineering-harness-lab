@@ -24,7 +24,7 @@ class KnowledgeWorker:
         if claim is None:return None
         check=lambda:self.queue.check(claim)
         source=self.queue.knowledge
-        knowledge=Knowledge(source.runs,source.authenticate,self.vectors_factory(check))
+        knowledge=Knowledge(source.runs,source.authenticate,self.vectors_factory(check),configuration=claim.configuration,check=check)
         try:
             check()
             result=knowledge.rebuild(guard=lambda db,**values:self.queue.guard(db,claim,**values))

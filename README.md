@@ -1,6 +1,22 @@
 # AI Engineering Harness Lab
 
-Etapa 2: construir y operar un harness DevOps desde su core. El recorrido local incluye lectura persistida, MCP Python/Go, API/frontend, workers con leases/fencing, identidad de servicio/TLS y observabilidad. **M4a–M4h agregan acciones aprobadas sobre un proveedor ficticio**, recuperación sin reenvío y evaluaciones deterministas. El modelo y los backends DevOps siguen simulados: no requiere API keys ni llamadas pagadas. M5a–M5e agregan inventario PostgreSQL, Chroma, ingestión durable, RAG léxico en el core y una consola autenticada común. LLM/embeddings semánticos, OIDC y conectores reales siguen pendientes. Los cuatro documentos iniciales distinguen la arquitectura objetivo del estado actual en [la matriz de cierre](docs/status.md).
+Este proyecto es un laboratorio educativo para construir y operar una aplicación de agentes de IA orientada a DevOps. Permite investigar un ticket, consultar su pull request y comparar la revisión del código con la de un build; también permite cargar documentos y buscar información con sus fuentes. Desde una consola web podés seguir las ejecuciones, revisar propuestas de acciones, aprobarlas con otro usuario e investigar fallos con trazas y métricas.
+
+El objetivo es aprender cómo construir el sistema que rodea al agente —el *harness*—: permisos, límites de tiempo y llamadas, estado persistido y recuperación tras interrupciones. Se espera que cada ejecución deje evidencia de lo que hizo y respete esos controles al retomarse. Actualmente Jira, GitHub y Jenkins usan datos simulados, y las decisiones del agente están guionadas; la búsqueda semántica sí utiliza un modelo local real. Las acciones aprobadas también son simuladas.
+
+**Para probarlo con el entorno ya preparado**, ejecutá desde esta carpeta:
+
+```bash
+uv run python -m harness.web --storage postgres --user-auth --port 8005
+```
+
+Abrí [la consola](http://127.0.0.1:8005/console) y seleccioná tu archivo de credencial local. En **Ejecuciones**, elegí **DevOps** y pulsá **Iniciar lectura**: cuando termine, verás el estado del ticket, la evidencia del PR y el resultado de comparar el build con su revisión. En **Conocimiento**, podés cargar un documento, indexarlo y escribir una pregunta para obtener fragmentos relevantes con sus citas. Esta búsqueda todavía no redacta una respuesta con un LLM.
+
+La consola necesita los servicios y workers del laboratorio en marcha. Si es tu primera vez, seguí la [guía paso a paso](docs/guide.md); para preparar la consola actual y sus workers, consultá el [capítulo 49](docs/guide/49-m5e-consola-autenticada-unificada.md), y para la búsqueda semántica, el [capítulo 50](docs/guide/50-m5f-embeddings-semanticos-y-evaluaciones.md). Más abajo están los comandos para levantar los servicios y emitir la credencial.
+
+## Alcance y estado del laboratorio
+
+Etapa 2: construir y operar un harness DevOps desde su core. El recorrido local incluye lectura persistida, MCP Python/Go, API/frontend, workers con leases/fencing, identidad de servicio/TLS y observabilidad. **M4a–M4h agregan acciones aprobadas sobre un proveedor ficticio**, recuperación sin reenvío y evaluaciones deterministas. El modelo y los backends DevOps siguen simulados: no requiere API keys ni llamadas pagadas. M5a–M5f agregan inventario PostgreSQL, Chroma, ingestión durable, RAG en el core y una consola autenticada común. M5f añade embeddings semánticos locales fijados y comparación de retrieval. LLM de generación real, OIDC y conectores reales siguen pendientes. Los cuatro documentos iniciales distinguen la arquitectura objetivo del estado actual en [la matriz de cierre](docs/status.md).
 
 ## Consola autenticada unificada
 
@@ -12,7 +28,7 @@ uv run python -m harness.web --storage postgres --user-auth --port 8005
 uv run python scripts/users.py issue --actor reader-demo --workspace workspace-alpha
 ```
 
-Los workers de runs, ingestión y escrituras siguen siendo procesos independientes. La consola conserva sus controles y consulta el estado persistido; la navegación no cambia el usuario ni guarda el bearer en el navegador. Configuración es de solo lectura y Jaeger/Grafana mantienen sus interfaces locales compartidas. Ver [guía 49](docs/guide/49-m5e-consola-autenticada-unificada.md) para comandos, roles y decisiones. El siguiente paso es embeddings semánticos.
+Los workers de runs, ingestión y escrituras siguen siendo procesos independientes. La consola conserva sus controles y consulta el estado persistido; la navegación no cambia el usuario ni guarda el bearer en el navegador. Configuración es de solo lectura y Jaeger/Grafana mantienen sus interfaces locales compartidas. Ver [guía 49](docs/guide/49-m5e-consola-autenticada-unificada.md) para comandos, roles y decisiones. Los embeddings semánticos y su comparación están documentados en M5f.
 
 ## Levantar la app completa con Compose
 
@@ -484,3 +500,16 @@ uv run python scripts/rag_agent.py --session "$SESSION_ID" status RUN_ID
 ```
 
 Perfil opt-in CI+RAG, con Jira/GitHub/Jenkins por MCP y `knowledge_search` nativo. Cinco decisiones y cuatro herramientas en el mismo core, con límites persistidos y autorización actual del contexto guardado. Reutiliza citas al recuperar; retirada o acceso revocado bloquean su entrega. Modelo guionado y consulta fija, embeddings léxicos; no demuestra todavía un LLM real decidiendo cuándo buscar. La biblioteca existente conserva su función y estos runs se consultan por API/CLI. Guía [48](docs/guide/48-m5d-rag-como-herramienta-del-core.md).
+
+## M5f · Embeddings semánticos y evaluación
+
+Con Ollama local y `qwen3-embedding:4b` preparado:
+
+```bash
+uv run python scripts/embeddings.py warmup
+uv run python scripts/evaluate_retrieval.py
+```
+
+En Conocimiento elegí el perfil semántico y admití un job. Modelo/digest/dimensión/receta quedan fijados en su configuración; el worker conserva recuperación, permisos y activación atómica. La búsqueda usa la configuración del índice activo. El baseline léxico sigue disponible. El proveedor verifica el manifest conocido y rechaza otro digest; no descarga modelos ni usa API keys.
+
+La evaluación aislada usa ocho documentos y doce consultas: top-1 local 50 % léxico frente a 100 % semántico, con p50 de unos 33/145 ms. Es un fixture pequeño, sin evaluación de generación ni de abstención. Reporte ignorado en runtime; código y dataset versionados. Preparación, pin y límites en [guía 50](docs/guide/50-m5f-embeddings-semanticos-y-evaluaciones.md).

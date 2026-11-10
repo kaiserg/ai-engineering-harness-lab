@@ -258,7 +258,7 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
 
     @app.exception_handler(ContractError)
     async def domain_error(request, error):
-        status = (503 if error.code in ('IDENTITY_UNAVAILABLE','DATABASE_UNAVAILABLE','CHROMA_UNAVAILABLE') else 401 if error.code=='UNAUTHENTICATED' else 413 if error.code=='PAYLOAD_TOO_LARGE' else 404 if error.code == 'NOT_FOUND' else 403 if error.code == 'FORBIDDEN' else
+        status = (503 if error.code in ('IDENTITY_UNAVAILABLE','DATABASE_UNAVAILABLE','CHROMA_UNAVAILABLE','EMBEDDING_UNAVAILABLE','EMBEDDING_MODEL_UNAVAILABLE') else 401 if error.code=='UNAUTHENTICATED' else 413 if error.code=='PAYLOAD_TOO_LARGE' else 404 if error.code == 'NOT_FOUND' else 403 if error.code == 'FORBIDDEN' else
                   429 if error.code in ('QUEUE_FULL','KNOWLEDGE_QUOTA') else 422 if error.code in ('INVALID_PAUSE','INVALID_DOCUMENT','INVALID_QUERY','EMPTY_TEXT') else 409)
         return JSONResponse({'error': error.code}, status_code=status)
 

@@ -1,6 +1,6 @@
 # M5e Consola autenticada unificada
 
-[Índice](../guide.md) · [← Anterior](48-m5d-rag-como-herramienta-del-core.md)
+[Índice](../guide.md) · [← Anterior](48-m5d-rag-como-herramienta-del-core.md) · [Siguiente →](50-m5f-embeddings-semanticos-y-evaluaciones.md)
 
 ## 1. Objetivo: recorrer el harness desde un lugar
 

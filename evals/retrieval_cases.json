@@ -1,0 +1,28 @@
+{
+  "version": "retrieval-es-en-v1",
+  "gates": {"semantic_top1": 0.75, "semantic_recall_at_3": 0.9},
+  "documents": [
+    {"id":"release", "filename":"atlas-release.md", "text":"La responsable del release del software Atlas es Marta. Ella coordina la entrega de cada nueva versión del producto."},
+    {"id":"approval", "filename":"approval.md", "text":"Una solicitud de pruebas necesita revisión por otro actor con rol approver. El solicitante no puede aprobar su propia intención. La decisión se vincula al hash y la versión exactos."},
+    {"id":"uncertain", "filename":"uncertain.md", "text":"Si el proveedor pudo aceptar una solicitud antes de una interrupción, consultá el recibo usando el mismo operation_id. Una respuesta perdida no autoriza reenviar ni duplicar el efecto."},
+    {"id":"retirement", "filename":"retirement.md", "text":"Retirar un documento lo excluye inmediatamente de las búsquedas aunque queden vectores antiguos. La revisión del inventario impide activar una indexación anterior a la retirada."},
+    {"id":"rotation", "filename":"rotation.md", "text":"Al rotar la clave de firma se publica la clave pública nueva y se mantiene temporalmente la anterior en JWKS. El solapamiento permite validar tokens todavía vigentes durante la transición."},
+    {"id":"budget", "filename":"budget.md", "text":"Al recuperar un intento interrumpido, el tiempo reservado incierto se cobra al presupuesto activo persistido. El nuevo intento consume otra reserva y no reinicia contadores ni deadline."},
+    {"id":"index", "filename":"index.md", "text":"Cada reindexación construye un candidato separado. Si falla su ingestión, el índice anterior sigue activo. La nueva versión solo lo reemplaza después de verificarse y confirmarse en PostgreSQL."},
+    {"id":"revision", "filename":"revision.md", "text":"Un build verde únicamente valida la revisión exacta para la que se ejecutó. Compará el SHA del build con el head del pull request. Si difieren, ese resultado no prueba el cambio actual."}
+  ],
+  "queries": [
+    {"id":"exact-release", "query":"Marta responsable release Atlas", "relevant":["release"]},
+    {"id":"paraphrase-release", "query":"¿Quién coordina la entrega de la nueva versión de Atlas?", "relevant":["release"]},
+    {"id":"paraphrase-uncertain", "query":"El proveedor aceptó la petición y se cortó la conexión, ¿cómo evito ejecutar dos veces?", "relevant":["uncertain"]},
+    {"id":"self-approval", "query":"¿Puedo autorizar yo mismo el trabajo que pedí?", "relevant":["approval"]},
+    {"id":"retired-reappearing", "query":"¿Qué impide que una tarea antigua vuelva a hacer visible un archivo dado de baja?", "relevant":["retirement"]},
+    {"id":"failed-search-rebuild", "query":"Si regenerar el buscador falla, ¿se pierde lo que antes podía consultar?", "relevant":["index"]},
+    {"id":"crash-time", "query":"¿Cómo se contabilizan los segundos que pudo gastar el intento que murió?", "relevant":["budget"]},
+    {"id":"green-build", "query":"¿Una ejecución verde valida cualquier cambio del pull request?", "relevant":["revision"]},
+    {"id":"live-signing-rotation", "query":"¿Cómo renovar la firma sin invalidar las credenciales aún vigentes?", "relevant":["rotation"]},
+    {"id":"exact-revision", "query":"comparar SHA PR build revisión", "relevant":["revision"]},
+    {"id":"cross-language-release", "query":"Who is accountable for shipping the next Atlas software version?", "relevant":["release"]},
+    {"id":"cross-language-uncertain", "query":"Should I resubmit a request if the server might have already accepted it?", "relevant":["uncertain"]}
+  ]
+}

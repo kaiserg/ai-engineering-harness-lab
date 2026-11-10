@@ -8,6 +8,7 @@ from scripts.users import load_credential
 from harness.contracts import ContractError
 from harness.knowledge import Knowledge,MAX_BYTES
 from harness.knowledge_queue import KnowledgeQueue
+from harness.embeddings import PROFILES
 from harness.postgres_config import RUNTIME,local_dsn
 from harness.postgres_store import PostgresRunStore
 from harness.user_identity import UserIdentityStore
@@ -20,7 +21,8 @@ def main():
     upload=sub.add_parser('upload');upload.add_argument('path',type=Path)
     upload.add_argument('--reader',action='append',default=[])
     sub.add_parser('list');sub.add_parser('rebuild')
-    sub.add_parser('enqueue').add_argument('--key',required=True)
+    enqueue=sub.add_parser('enqueue');enqueue.add_argument('--key',required=True)
+    enqueue.add_argument('--embeddings',choices=PROFILES,default='lexical')
     sub.add_parser('job').add_argument('job_id')
     sub.add_parser('retire').add_argument('document_id')
     search=sub.add_parser('search');search.add_argument('query');search.add_argument('--limit',type=int,default=3)
@@ -35,7 +37,7 @@ def main():
         with args.path.open('rb') as handle:raw=handle.read(MAX_BYTES+1)
         if len(raw)>MAX_BYTES:raise ContractError('INVALID_DOCUMENT')
         result=knowledge.register(args.path.name,raw.decode('utf-8'),args.reader)
-    elif args.command=='enqueue':result=KnowledgeQueue(knowledge).enqueue(args.key)
+    elif args.command=='enqueue':result=KnowledgeQueue(knowledge).enqueue(args.key,configuration=PROFILES[args.embeddings])
     elif args.command=='job':result=KnowledgeQueue(knowledge).get(args.job_id)
     elif args.command=='list':result={'documents':knowledge.documents()}
     elif args.command=='rebuild':result=knowledge.rebuild()

@@ -34,12 +34,15 @@ class ChromaVectors:
         deadline = time.monotonic()+30
         self.request('POST', BASE, {'name':name, 'configuration':{'hnsw':{'space':'cosine'}}})
         identifier = self.collection(name)
-        for offset in range(0, len(chunks), 64):
+        batch_size=getattr(embed,'batch_size',64)
+        for offset in range(0, len(chunks), batch_size):
             if time.monotonic()>=deadline:raise ContractError('INDEX_DEADLINE')
-            batch = chunks[offset:offset+64]
+            batch = chunks[offset:offset+batch_size]
+            embeddings=embed.documents([c['content'] for c in batch]) if hasattr(embed,'documents') else [embed(c['content']) for c in batch]
+            if time.monotonic()>=deadline:raise ContractError('INDEX_DEADLINE')
             self.request('POST', BASE+'/'+identifier+'/upsert', {
                 'ids':[c['chunk_id'] for c in batch],
-                'embeddings':[embed(c['content']) for c in batch],
+                'embeddings':embeddings,
                 'metadatas':[{'document_id':c['document_id']} for c in batch]})
         if time.monotonic()>=deadline:raise ContractError('INDEX_DEADLINE')
         stored = self.request('POST', BASE+'/'+identifier+'/get', {'limit':1001, 'include':[]})

@@ -4,6 +4,7 @@ from fastapi import Request
 from .contracts import ContractError
 from .core import Limits
 from .knowledge import CONFIG
+from .embeddings import PROFILES
 from .rag_agent import PROFILE
 from .rag_api import RAG_LIMITS
 from .telemetry import carrier
@@ -38,8 +39,15 @@ def install_routes(app,scenarios):
     @app.get('/api/console/config')
     def config(request:Request):
         identity=principal(request)
+        active=None
+        with request.app.state.run_store._database() as db:
+            table=db.execute("SELECT to_regclass('knowledge_inventory') AS name").fetchone()['name']
+            if table:
+                active=db.execute('''SELECT k.configuration,k.index_id FROM knowledge_inventory i
+                    JOIN knowledge_indexes k ON k.index_id=i.active_index WHERE i.workspace_id=%s''',(identity.workspace_id,)).fetchone()
         return {'workspace':identity.workspace_id,'identity_mode':'local-user-credential',
-                'model':'scripted','embeddings':CONFIG,'limits':{'ci':asdict(Limits()),'rag':asdict(RAG_LIMITS)},
+                'model':'scripted','embeddings':active['configuration'] if active else CONFIG,
+                'active_index':active['index_id'] if active else None,'embedding_profiles':PROFILES,'limits':{'ci':asdict(Limits()),'rag':asdict(RAG_LIMITS)},
                 'ingestion':{'max_file_bytes':5*1024*1024,'max_documents':20,'max_chunks':1000,
                     'max_attempts':3,'deadline_seconds':300},
                 'scenarios':[{'id':key,'title':value[0]} for key,value in scenarios.items()],

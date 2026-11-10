@@ -1,11 +1,13 @@
 """Frontera HTTP de conocimiento: admisión/consulta; nunca ejecuta la ingestión."""
 import asyncio
 from uuid import UUID
+from typing import Literal
 from fastapi import Request
 from pydantic import BaseModel,ConfigDict,Field,ValidationError
 from .contracts import ContractError
 from .knowledge import Knowledge,MAX_BYTES
 from .knowledge_queue import KnowledgeQueue
+from .embeddings import PROFILES
 
 BODY_LIMIT=6*1024*1024
 
@@ -21,6 +23,7 @@ class Upload(BaseModel):
 class Enqueue(BaseModel):
     model_config=ConfigDict(extra='forbid')
     request_key:UUID
+    embedding_profile:Literal['lexical','semantic']='lexical'
 
 
 class Search(BaseModel):
@@ -66,7 +69,7 @@ def install_routes(app):
     def jobs(request:Request):return {'jobs':KnowledgeQueue(service(request)).recent()}
 
     @app.post('/api/knowledge/jobs',status_code=202)
-    def enqueue(body:Enqueue,request:Request):return KnowledgeQueue(service(request)).enqueue(str(body.request_key))
+    def enqueue(body:Enqueue,request:Request):return KnowledgeQueue(service(request)).enqueue(str(body.request_key),configuration=PROFILES[body.embedding_profile])
 
     @app.get('/api/knowledge/jobs/{job_id}')
     def job(job_id:UUID,request:Request):return KnowledgeQueue(service(request)).get(str(job_id))
