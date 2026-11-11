@@ -31,3 +31,32 @@ class MCPJenkins(MCPRead):
                 or payload['source_id'] != f"jenkins:{data['job']}:{data['build_number']}:{data['revision']}"):
             raise ContractError('INVALID_TOOL_OUTPUT')
         return ToolResult(call.call_id, dict(data), payload['source_id'], tool_name=call.name)
+
+
+class MCPJenkinsLive(MCPJenkins):
+    def __init__(self, identity, binding, token):
+        super().__init__(identity, scenario='live')
+        self.parameters.env.update(HARNESS_JENKINS_URL=binding.url, HARNESS_JENKINS_JOB=binding.job,
+                                   HARNESS_JENKINS_USER=binding.user, HARNESS_JENKINS_TOKEN=token)
+
+    @staticmethod
+    def _normalize(result, call):
+        import re
+        from ..contracts import pull_request_arguments
+
+        payload = MCPRead._payload(result)
+        data = payload['data']
+        if (type(data) is not dict
+                or set(data) != {'job','build_number','repository','pull_number','revision','result'}
+                or data['job'] != call.arguments['job']
+                or type(data['build_number']) is not int or data['build_number'] != call.arguments['build_number']
+                or type(data['revision']) is not str
+                or not re.fullmatch(r'[0-9a-f]{40}(?:[0-9a-f]{24})?', data['revision'])
+                or data['result'] not in ('SUCCESS', 'FAILURE')
+                or payload['source_id'] != f"jenkins:{data['job']}:{data['build_number']}:{data['revision']}"):
+            raise ContractError('INVALID_TOOL_OUTPUT')
+        try:
+            pull_request_arguments({key: data[key] for key in ('repository', 'pull_number')})
+        except ContractError:
+            raise ContractError('INVALID_TOOL_OUTPUT') from None
+        return ToolResult(call.call_id, dict(data), payload['source_id'], tool_name=call.name)

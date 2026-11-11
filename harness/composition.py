@@ -5,7 +5,7 @@ from .contracts import ContractError, Identity
 from .core import Harness, Limits
 from .fakes import (AdversarialCILLM, CIScriptedLLM, DevOpsScriptedLLM, FakeJira,
                     ReadOnlyPolicy, ScriptedLLM)
-from .profiles import CI_CHAT_PROFILES, parse_ci_profile
+from .profiles import CI_CHAT_PROFILES, LIVE_CI_PREFIX, parse_ci_profile
 
 
 def demo_identity():
@@ -35,13 +35,25 @@ def compose(profile, identity, store, *, limits=Limits(), checkpoint_hook=None, 
     jira_chat=is_jira(profile)
     ci_chat=profile in CI_CHAT_PROFILES
     reader_chat = profile in (READER_PROFILE, CHAT_PROFILE) or jira_chat or github_chat
-    if (reader_chat or ci_chat) and knowledge is None:
+    live_ci = profile.startswith(LIVE_CI_PREFIX)
+    if (reader_chat or ci_chat or live_ci) and knowledge is None:
         from .postgres_store import PostgresRunStore
         from .user_identity import UserIdentityStore
         from .knowledge import Knowledge
         if not hasattr(store,'_dsn') or store.schema=='harness_lab':raise ContractError('CONFIG_CHANGED')
         directory=UserIdentityStore(PostgresRunStore(store._dsn))
         knowledge=Knowledge(store,lambda:directory.resolve(identity.actor_id,identity.workspace_id))
+    if live_ci:
+        from .adapters.mcp_github_public import MCPGitHubPublic
+        from .adapters.mcp_jenkins import MCPJenkinsLive
+        from .ci_live import LivePlanner, LivePolicy, finish, load
+        binding, token = load(profile)
+        github, jenkins = MCPGitHubPublic(identity), MCPJenkinsLive(identity,binding,token)
+        tools = {'github_get_pull_request':github,'jenkins_get_build':jenkins}
+        return Execution(Harness(LivePlanner(binding),LivePolicy(knowledge,binding),tools,store,
+            limits=limits,checkpoint_hook=checkpoint_hook,execution_profile=profile,
+            finalizer=lambda run:finish(run,binding),partial_tools=('jenkins_get_build',)),
+            {'github':github,'jenkins':jenkins})
     if reader_chat:
         if github_chat:
             if profile==GH_PUBLIC:

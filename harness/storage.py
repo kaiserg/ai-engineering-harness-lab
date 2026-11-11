@@ -9,7 +9,7 @@ import sqlite3
 from .contracts import ContractError, Identity, Run, RunState, RUN_TRANSITIONS, ToolCall, ToolResult, READ_TOOLS, ToolFailure, OPTIONAL_READ_ERRORS, tool_arguments
 
 
-from .profiles import CI_CHAT_PROFILES
+from .profiles import CI_CHAT_PROFILES, LIVE_CI_PREFIX
 
 def check_owner(run, identity):
     if run.workspace_id != identity.workspace_id or run.requested_by != identity.actor_id:
@@ -40,7 +40,7 @@ def check_read_request(run):
         data=run.read_request
         if (type(data) is not dict or set(data)!={'query'} or type(data['query']) is not str
                 or not data['query'].strip() or len(data['query'])>2000):raise ContractError('INVALID_CHECKPOINT')
-    elif run.execution_profile in CI_CHAT_PROFILES or run.execution_profile in ('ollama-qwen3-4b-document-chat-v1','ollama-qwen3-4b-jira-demo-chat-v1','ollama-qwen3-4b-github-demo-chat-v1','ollama-qwen3-4b-github-public-chat-v1') or run.execution_profile.startswith('ollama-qwen3-4b-jira-cloud-chat-v1:'):
+    elif run.execution_profile.startswith(LIVE_CI_PREFIX) or run.execution_profile in CI_CHAT_PROFILES or run.execution_profile in ('ollama-qwen3-4b-document-chat-v1','ollama-qwen3-4b-jira-demo-chat-v1','ollama-qwen3-4b-github-demo-chat-v1','ollama-qwen3-4b-github-public-chat-v1') or run.execution_profile.startswith('ollama-qwen3-4b-jira-cloud-chat-v1:'):
         data=run.read_request
         from uuid import UUID
         try:

@@ -10,7 +10,7 @@ from .core import authorize_run
 from .llm_reader import OllamaReader,LIMITS
 from .rag_agent import KnowledgePolicy
 from .telemetry import carrier
-from .profiles import CI_CHAT_MODES, CI_CHAT_PROFILES
+from .profiles import CI_CHAT_MODES, CI_CHAT_PROFILES, LIVE_CI_PREFIX
 
 PROFILE='ollama-qwen3-4b-document-chat-v1'
 MAX_TURNS=20
@@ -87,7 +87,7 @@ class Chats:
             if prior:
                 if conversation_mode(prior['execution_profile'])!=mode:raise ContractError('CONFLICT')
                 return prior
-            profile=profile_for_mode(mode)
+            profile=profile_for_mode(mode,identity)
             db.execute('''INSERT INTO conversations(conversation_id,workspace_id,requested_by,request_key,execution_profile)
                 VALUES (%s,%s,%s,%s,%s) ON CONFLICT(workspace_id,requested_by,request_key) DO NOTHING''',
                 (str(uuid4()),identity.workspace_id,identity.actor_id,str(key),profile))
@@ -119,10 +119,14 @@ class Chats:
                 raise ContractError('RUN_BUSY')
             profile=conversation['execution_profile']
             limits=LIMITS
-            if profile in CI_CHAT_PROFILES:
+            live_ci = profile.startswith(LIVE_CI_PREFIX)
+            if live_ci:
+                from .ci_live import LIMITS as LIVE_LIMITS
+                limits=LIVE_LIMITS
+            elif profile in CI_CHAT_PROFILES:
                 from .ci_chat import CI_LIMITS
                 limits=CI_LIMITS
-            history=[] if profile in CI_CHAT_PROFILES else [str(t['run_id']) for t in turns if t['payload']['status']=='COMPLETED'][-HISTORY_TURNS:]
+            history=[] if live_ci or profile in CI_CHAT_PROFILES else [str(t['run_id']) for t in turns if t['payload']['status']=='COMPLETED'][-HISTORY_TURNS:]
             run=Run(identity.workspace_id,identity.actor_id,execution_profile=profile,limits_snapshot=asdict(limits),
                 read_request={'query':query,'conversation_id':str(identifier),'history_run_ids':history})
             policy_for(self.knowledge,run.execution_profile).authorize_context(run,identity)
@@ -160,13 +164,14 @@ class Chats:
                     if error.code!='EVIDENCE_REVOKED':raise
                     messages.append({'ordinal':turn['ordinal'],'run_id':str(turn['run_id']),'unavailable':True})
         return {'conversation_id':str(identifier),'created_at':row['created_at'],'mode':conversation_mode(row['execution_profile']),'turns':messages,
-            'max_turns':MAX_TURNS,'history_turns':0 if row['execution_profile'] in CI_CHAT_PROFILES else HISTORY_TURNS}
+            'max_turns':MAX_TURNS,'history_turns':0 if row['execution_profile'] in CI_CHAT_PROFILES or row['execution_profile'].startswith(LIVE_CI_PREFIX) else HISTORY_TURNS}
 
 
 def conversation_mode(profile):
     from .jira_chat import PROFILE as JIRA_PROFILE
     from .jira_cloud import PREFIX
     from .github_chat import DEMO as GH_DEMO,PUBLIC as GH_PUBLIC
+    if profile.startswith(LIVE_CI_PREFIX):return 'ci-live'
     if profile in CI_CHAT_PROFILES:return CI_CHAT_PROFILES[profile]
     if profile==GH_DEMO:return 'github-demo'
     if profile==GH_PUBLIC:return 'github-public'
@@ -176,10 +181,15 @@ def conversation_mode(profile):
     raise ContractError('CONFIG_CHANGED')
 
 
-def profile_for_mode(mode):
+def profile_for_mode(mode,identity=None):
     from .jira_chat import PROFILE as JIRA_PROFILE
     from .jira_cloud import PREFIX,current
     from .github_chat import DEMO as GH_DEMO,PUBLIC as GH_PUBLIC
+    if mode=='ci-live':
+        from .ci_live import load
+        binding=load()[0]
+        if identity is not None:binding.authorize_identity(identity)
+        return binding.profile
     if mode in CI_CHAT_MODES:return CI_CHAT_MODES[mode]
     if mode=='github-demo':return GH_DEMO
     if mode=='github-public':return GH_PUBLIC
@@ -192,6 +202,9 @@ def profile_for_mode(mode):
 def policy_for(knowledge,profile):
     from .jira_chat import is_jira,JiraPolicy
     from .github_chat import PROFILES,GitHubPolicy
+    if profile.startswith(LIVE_CI_PREFIX):
+        from .ci_live import LivePolicy,load
+        return LivePolicy(knowledge,load(profile)[0])
     if profile in CI_CHAT_PROFILES:
         from .ci_chat import CIChatPolicy
         return CIChatPolicy(knowledge)

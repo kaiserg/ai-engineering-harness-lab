@@ -1,4 +1,4 @@
-// Jenkins ficticio por MCP: solo lectura, sin credenciales ni HTTP a Jenkins.
+// Lecturas de Jenkins por MCP para fixtures y para un controlador local.
 package main
 
 import (
@@ -62,8 +62,12 @@ func toolError(code string) *mcp.CallToolResult {
 }
 
 func newServer(subject identity, scenario string, delay time.Duration) *mcp.Server {
-	server := mcp.NewServer(&mcp.Implementation{Name: "jenkins-fixture", Version: "1"}, nil)
-	server.AddTool(&mcp.Tool{Name: "jenkins_get_build", Description: "Consulta un build ficticio autorizado. Solo lectura.", InputSchema: inputSchema},
+	return serverFor(subject, scenario, delay, nil)
+}
+
+func serverFor(subject identity, scenario string, delay time.Duration, live *liveJenkins) *mcp.Server {
+	server := mcp.NewServer(&mcp.Implementation{Name: "jenkins-read", Version: "1"}, nil)
+	server.AddTool(&mcp.Tool{Name: "jenkins_get_build", Description: "Consulta un build autorizado. Solo lectura.", InputSchema: inputSchema},
 		func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			args, err := parseArguments(req.Params.Arguments)
 			if err != nil {
@@ -71,6 +75,13 @@ func newServer(subject identity, scenario string, delay time.Duration) *mcp.Serv
 			}
 			if !(slices.Contains(subject.Roles, "reader") || slices.Contains(subject.Roles, "operator")) || !slices.Contains(subject.Jobs, args.Job) {
 				return toolError("FORBIDDEN"), nil
+			}
+			if live != nil {
+				data, err := live.build(ctx, args)
+				if err != nil {
+					return toolError(err.Error()), nil
+				}
+				return buildResult(args, data), nil
 			}
 			if subject.Workspace != "workspace-alpha" || args.Job != "atlas-tests" || args.Build != 101 {
 				return toolError("NOT_FOUND"), nil
@@ -92,13 +103,17 @@ func newServer(subject identity, scenario string, delay time.Duration) *mcp.Serv
 			if scenario == "failed" {
 				result = "FAILURE"
 			}
-			payload := map[string]any{"schema_version": 1,
-				"data":      map[string]any{"job": args.Job, "build_number": args.Build, "repository": "demo/atlas", "revision": revision, "result": result},
-				"source_id": fmt.Sprintf("jenkins:%s:%d:%s", args.Job, args.Build, revision)}
-			text, _ := json.Marshal(payload)
-			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(text)}}, StructuredContent: payload}, nil
+			data := map[string]any{"job": args.Job, "build_number": args.Build, "repository": "demo/atlas", "revision": revision, "result": result}
+			return buildResult(args, data), nil
 		})
 	return server
+}
+
+func buildResult(args arguments, data map[string]any) *mcp.CallToolResult {
+	payload := map[string]any{"schema_version": 1, "data": data,
+		"source_id": fmt.Sprintf("jenkins:%s:%d:%s", args.Job, args.Build, data["revision"])}
+	text, _ := json.Marshal(payload)
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(text)}}, StructuredContent: payload}
 }
 
 func main() {
@@ -107,14 +122,22 @@ func main() {
 		log.Fatal("INVALID_CONFIGURATION")
 	}
 	scenario := os.Getenv("HARNESS_BUILD_SCENARIO")
-	if !slices.Contains([]string{"matching", "stale", "failed", "unavailable"}, scenario) {
+	var live *liveJenkins
+	if scenario == "live" {
+		var err error
+		live, err = newLiveJenkins(os.Getenv("HARNESS_JENKINS_URL"), os.Getenv("HARNESS_JENKINS_JOB"),
+			os.Getenv("HARNESS_JENKINS_USER"), os.Getenv("HARNESS_JENKINS_TOKEN"))
+		if err != nil {
+			log.Fatal("INVALID_CONFIGURATION")
+		}
+	} else if !slices.Contains([]string{"matching", "stale", "failed", "unavailable"}, scenario) {
 		log.Fatal("INVALID_CONFIGURATION")
 	}
 	delay, err := strconv.ParseFloat(os.Getenv("HARNESS_MCP_DELAY"), 64)
 	if err != nil || math.IsNaN(delay) || math.IsInf(delay, 0) || delay < 0 || delay > 3600 {
 		log.Fatal("INVALID_CONFIGURATION")
 	}
-	if err := newServer(subject, scenario, time.Duration(delay*float64(time.Second))).Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+	if err := serverFor(subject, scenario, time.Duration(delay*float64(time.Second)), live).Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal("MCP_UNAVAILABLE") // stderr; stdout pertenece al protocolo.
 	}
 }

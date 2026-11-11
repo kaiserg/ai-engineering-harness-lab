@@ -16,7 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .composition import compose, demo_identity
 from .checkpoints import RunInterrupted, pause_hook
-from .profiles import CI_CHAT_PROFILES
+from .profiles import CI_CHAT_PROFILES, LIVE_CI_PREFIX
 from .contracts import ContractError, Run, RunState
 from .core import Limits, authorize_run
 from .fakes import ReadOnlyPolicy
@@ -66,7 +66,7 @@ class RunService:
 
     def load(self, run_id):
         run = self.store.load(str(run_id), self.identity)
-        if run.execution_profile in CI_CHAT_PROFILES or run.execution_profile in ('mcp-devops-rag-v1','ollama-qwen3-4b-document-reader-v1','ollama-qwen3-4b-document-chat-v1','ollama-qwen3-4b-jira-demo-chat-v1','ollama-qwen3-4b-github-demo-chat-v1','ollama-qwen3-4b-github-public-chat-v1') or run.execution_profile.startswith('ollama-qwen3-4b-jira-cloud-chat-v1:'):raise ContractError('NOT_FOUND')
+        if run.execution_profile.startswith(LIVE_CI_PREFIX) or run.execution_profile in CI_CHAT_PROFILES or run.execution_profile in ('mcp-devops-rag-v1','ollama-qwen3-4b-document-reader-v1','ollama-qwen3-4b-document-chat-v1','ollama-qwen3-4b-jira-demo-chat-v1','ollama-qwen3-4b-github-demo-chat-v1','ollama-qwen3-4b-github-public-chat-v1') or run.execution_profile.startswith('ollama-qwen3-4b-jira-cloud-chat-v1:'):raise ContractError('NOT_FOUND')
         authorize_run(run, self.identity, ReadOnlyPolicy())
         return run
 
@@ -81,7 +81,7 @@ class RunService:
     def recent(self):
         visible = []
         for run in self.store.list(self.identity):
-            if run.execution_profile in CI_CHAT_PROFILES or run.execution_profile in ('mcp-devops-rag-v1','ollama-qwen3-4b-document-reader-v1','ollama-qwen3-4b-document-chat-v1','ollama-qwen3-4b-jira-demo-chat-v1','ollama-qwen3-4b-github-demo-chat-v1','ollama-qwen3-4b-github-public-chat-v1') or run.execution_profile.startswith('ollama-qwen3-4b-jira-cloud-chat-v1:'):continue
+            if run.execution_profile.startswith(LIVE_CI_PREFIX) or run.execution_profile in CI_CHAT_PROFILES or run.execution_profile in ('mcp-devops-rag-v1','ollama-qwen3-4b-document-reader-v1','ollama-qwen3-4b-document-chat-v1','ollama-qwen3-4b-jira-demo-chat-v1','ollama-qwen3-4b-github-demo-chat-v1','ollama-qwen3-4b-github-public-chat-v1') or run.execution_profile.startswith('ollama-qwen3-4b-jira-cloud-chat-v1:'):continue
             try:
                 authorize_run(run, self.identity, ReadOnlyPolicy())
             except ContractError:
