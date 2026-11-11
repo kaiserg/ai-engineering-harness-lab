@@ -5,7 +5,7 @@ from .contracts import ContractError, Identity
 from .core import Harness, Limits
 from .fakes import (AdversarialCILLM, CIScriptedLLM, DevOpsScriptedLLM, FakeJira,
                     ReadOnlyPolicy, ScriptedLLM)
-from .profiles import parse_ci_profile
+from .profiles import CI_CHAT_PROFILES, parse_ci_profile
 
 
 def demo_identity():
@@ -33,14 +33,16 @@ def compose(profile, identity, store, *, limits=Limits(), checkpoint_hook=None, 
     from .github_chat import PROFILES as GH_PROFILES,PUBLIC as GH_PUBLIC,GitHubReader,GitHubPolicy,finish as finish_github
     github_chat=profile in GH_PROFILES
     jira_chat=is_jira(profile)
-    if profile in (READER_PROFILE,CHAT_PROFILE) or jira_chat or github_chat:
-        if knowledge is None:
-            from .postgres_store import PostgresRunStore
-            from .user_identity import UserIdentityStore
-            from .knowledge import Knowledge
-            if not hasattr(store,'_dsn') or store.schema=='harness_lab':raise ContractError('CONFIG_CHANGED')
-            directory=UserIdentityStore(PostgresRunStore(store._dsn))
-            knowledge=Knowledge(store,lambda:directory.resolve(identity.actor_id,identity.workspace_id))
+    ci_chat=profile in CI_CHAT_PROFILES
+    reader_chat = profile in (READER_PROFILE, CHAT_PROFILE) or jira_chat or github_chat
+    if (reader_chat or ci_chat) and knowledge is None:
+        from .postgres_store import PostgresRunStore
+        from .user_identity import UserIdentityStore
+        from .knowledge import Knowledge
+        if not hasattr(store,'_dsn') or store.schema=='harness_lab':raise ContractError('CONFIG_CHANGED')
+        directory=UserIdentityStore(PostgresRunStore(store._dsn))
+        knowledge=Knowledge(store,lambda:directory.resolve(identity.actor_id,identity.workspace_id))
+    if reader_chat:
         if github_chat:
             if profile==GH_PUBLIC:
                 from .adapters.mcp_github_public import MCPGitHubPublic
@@ -67,7 +69,8 @@ def compose(profile, identity, store, *, limits=Limits(), checkpoint_hook=None, 
         return Execution(Harness(model,policy,{'knowledge_search':adapter},store,
             limits=limits,checkpoint_hook=checkpoint_hook,execution_profile=profile,decision_finalizer=finish),{'knowledge':adapter})
     rag=profile==PROFILE
-    ci = parse_ci_profile('mcp-devops-ci-v2:matching' if rag else profile)
+    ci_profile = f"mcp-devops-ci-v2:{profile.split(':')[1]}" if ci_chat else profile
+    ci = parse_ci_profile('mcp-devops-ci-v2:matching' if rag else ci_profile)
     if ci is None and profile not in {'fake-jira-v1', 'mcp-jira-fixture-v1', 'mcp-devops-read-v1'}:
         raise ContractError('CONFIG_CHANGED')
     linked = ci is not None or profile == 'mcp-devops-read-v1'
@@ -100,6 +103,10 @@ def compose(profile, identity, store, *, limits=Limits(), checkpoint_hook=None, 
     model = (AdversarialCILLM(name, delay, attack=ci[3]) if ci and ci[0] in ('mcp-devops-ci-v3', 'mcp-devops-ci-v4')
              else model_type(name, delay))
     policy=ReadOnlyPolicy()
+    if ci_chat:
+        from .ci_chat import CIChatPlanner, CIChatPolicy, finish
+        model, policy, finalizer = CIChatPlanner(name, delay), CIChatPolicy(knowledge), finish
+        del tools['jira_delete_issue']
     if rag:
         if knowledge is None:
             from .postgres_store import PostgresRunStore

@@ -10,6 +10,7 @@ from .core import authorize_run
 from .llm_reader import OllamaReader,LIMITS
 from .rag_agent import KnowledgePolicy
 from .telemetry import carrier
+from .profiles import CI_CHAT_MODES, CI_CHAT_PROFILES
 
 PROFILE='ollama-qwen3-4b-document-chat-v1'
 MAX_TURNS=20
@@ -116,8 +117,13 @@ class Chats:
             if len(turns)>=MAX_TURNS:raise ContractError('CHAT_LIMIT')
             if turns and turns[-1]['payload']['status'] not in ('COMPLETED','FAILED','CANCELLED'):
                 raise ContractError('RUN_BUSY')
-            history=[str(t['run_id']) for t in turns if t['payload']['status']=='COMPLETED'][-HISTORY_TURNS:]
-            run=Run(identity.workspace_id,identity.actor_id,execution_profile=conversation['execution_profile'],limits_snapshot=asdict(LIMITS),
+            profile=conversation['execution_profile']
+            limits=LIMITS
+            if profile in CI_CHAT_PROFILES:
+                from .ci_chat import CI_LIMITS
+                limits=CI_LIMITS
+            history=[] if profile in CI_CHAT_PROFILES else [str(t['run_id']) for t in turns if t['payload']['status']=='COMPLETED'][-HISTORY_TURNS:]
+            run=Run(identity.workspace_id,identity.actor_id,execution_profile=profile,limits_snapshot=asdict(limits),
                 read_request={'query':query,'conversation_id':str(identifier),'history_run_ids':history})
             policy_for(self.knowledge,run.execution_profile).authorize_context(run,identity)
             self.runs._admit(db,run,identity,job_id=str(uuid4()),pause_at='jira' if pause else 'none',max_pending=16)
@@ -154,13 +160,14 @@ class Chats:
                     if error.code!='EVIDENCE_REVOKED':raise
                     messages.append({'ordinal':turn['ordinal'],'run_id':str(turn['run_id']),'unavailable':True})
         return {'conversation_id':str(identifier),'created_at':row['created_at'],'mode':conversation_mode(row['execution_profile']),'turns':messages,
-            'max_turns':MAX_TURNS,'history_turns':HISTORY_TURNS}
+            'max_turns':MAX_TURNS,'history_turns':0 if row['execution_profile'] in CI_CHAT_PROFILES else HISTORY_TURNS}
 
 
 def conversation_mode(profile):
     from .jira_chat import PROFILE as JIRA_PROFILE
     from .jira_cloud import PREFIX
     from .github_chat import DEMO as GH_DEMO,PUBLIC as GH_PUBLIC
+    if profile in CI_CHAT_PROFILES:return CI_CHAT_PROFILES[profile]
     if profile==GH_DEMO:return 'github-demo'
     if profile==GH_PUBLIC:return 'github-public'
     if profile==PROFILE:return 'documents'
@@ -173,6 +180,7 @@ def profile_for_mode(mode):
     from .jira_chat import PROFILE as JIRA_PROFILE
     from .jira_cloud import PREFIX,current
     from .github_chat import DEMO as GH_DEMO,PUBLIC as GH_PUBLIC
+    if mode in CI_CHAT_MODES:return CI_CHAT_MODES[mode]
     if mode=='github-demo':return GH_DEMO
     if mode=='github-public':return GH_PUBLIC
     if mode=='documents':return PROFILE
@@ -184,5 +192,8 @@ def profile_for_mode(mode):
 def policy_for(knowledge,profile):
     from .jira_chat import is_jira,JiraPolicy
     from .github_chat import PROFILES,GitHubPolicy
+    if profile in CI_CHAT_PROFILES:
+        from .ci_chat import CIChatPolicy
+        return CIChatPolicy(knowledge)
     if profile in PROFILES:return GitHubPolicy(knowledge,profile)
     return JiraPolicy(knowledge,profile) if is_jira(profile) else ChatPolicy(knowledge)

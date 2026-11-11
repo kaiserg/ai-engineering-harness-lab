@@ -6,7 +6,7 @@ Para distinguir lo implementado del diseño objetivo, consultá la [matriz de ci
 
 La guía se divide ahora en **55 capítulos**, uno por paso, dentro de `docs/guide/`. El contenido anterior se conserva en su orden de construcción; la [matriz de estado](status.md) distingue lo actual de los pasos históricos.
 
-**Último paso:** [M7d · GitHub desde el chat por MCP](guide/55-m7d-github-desde-el-chat.md).
+**Último paso:** [M7e · Investigación de CI desde el chat](guide/56-m7e-investigacion-ci-desde-el-chat.md).
 
 ## Índice
 
@@ -231,3 +231,7 @@ Los encabezados conservan las anclas de la guía anterior para mantener sus enla
 ## M7d GitHub desde el chat por MCP
 
 [55. Leer el capítulo](guide/55-m7d-github-desde-el-chat.md).
+
+## M7e Investigación de CI desde el chat
+
+[56. Leer el capítulo](guide/56-m7e-investigacion-ci-desde-el-chat.md).

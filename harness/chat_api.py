@@ -13,7 +13,7 @@ class Create(BaseModel):
 
 
 class Conversation(Create):
-    mode:Literal['documents','jira-demo','jira-cloud','github-demo','github-public']='documents'
+    mode:Literal['documents','jira-demo','jira-cloud','github-demo','github-public','ci-matching','ci-stale','ci-failed','ci-unavailable']='documents'
 
 
 class Send(Create):
