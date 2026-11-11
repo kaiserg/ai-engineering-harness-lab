@@ -3,6 +3,7 @@ from .contracts import ContractError
 
 CI_PREFIXES = ('mcp-devops-ci-v1:', 'mcp-devops-ci-v2:', 'mcp-devops-ci-v3:', 'mcp-devops-ci-v4:')
 BUILD_SCENARIOS = ('matching', 'stale', 'failed', 'unavailable')
+AGENTIC_CHAT_PROFILE = 'ollama-qwen3-4b-agentic-document-chat-v1'
 LIVE_CI_PREFIX = 'devops-ci-live-chat-v1:'
 JIRA_CI_PREFIX = 'devops-ci-jira-chat-v1:'
 REAL_CI_PREFIXES = (LIVE_CI_PREFIX, JIRA_CI_PREFIX)

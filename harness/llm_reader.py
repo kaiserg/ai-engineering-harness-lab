@@ -62,13 +62,16 @@ def question(run):
 def finish(run,decision):
     """Valida procedencia exacta; no pretende demostrar entailment semántico."""
     if len(run.results)!=1:raise ContractError('INCOMPLETE_EVIDENCE')
-    data=validate_result(run.results[0])
+    return finish_with_results(run.results,decision)
+
+
+def finish_with_results(results,decision):
+    matches={match['citation']:match['text'] for result in results for match in validate_result(result)['matches']}
     try:answer=ReadingAnswer.model_validate_json(decision.text)
     except ValidationError:raise ContractError('INVALID_MODEL_OUTPUT') from None
     if answer.status=='abstained':
         if answer.answer or answer.evidence:raise ContractError('INVALID_MODEL_OUTPUT')
         return FinalAnswer(ABSTENTION),{'answer_status':'ABSTAINED','knowledge_citations':[]}
-    matches={m['citation']:m['text'] for m in data['matches']}
     if not answer.answer.strip() or not answer.evidence:raise ContractError('INVALID_MODEL_OUTPUT')
     citations=[]
     for evidence in answer.evidence:
@@ -116,23 +119,26 @@ class OllamaReader:
                     'arguments':result_call(run.results[0]).arguments}}]},
                 {'role':'tool','tool_name':run.results[0].tool_name,'content':json.dumps(data,ensure_ascii=False)},
                 {'role':'user','content':'Respondé la pregunta original usando la evidencia. Una regla aplicable puede responder preguntas generales; abstenerse si falta evidencia. Devolvé solo JSON /no_think. Esquema: '+json.dumps(ReadingAnswer.model_json_schema())}])
+        content=await self.infer(messages,ReadingAnswer.model_json_schema() if final else self.search_schema())
+        if final:
+            decision=FinalAnswer(content)
+            self.validate_final(run,decision)  # Fallar antes de que el core publique texto sin validar.
+            return decision
+        return self.parse_call(run,content,messages)
+
+    async def infer(self,messages,schema,*,thinking=False):
         self.validate_messages(messages)
         client=AsyncClient(host=BASE,timeout=httpx.Timeout(25,connect=3),trust_env=False,follow_redirects=False)
         try:
             await self.pin(client)
-            response=await client.chat(model=MODEL,messages=messages,stream=False,think=False,
-                format=ReadingAnswer.model_json_schema() if final else self.search_schema(),
-                options={'temperature':0,'seed':42,'num_ctx':8192,'num_predict':700},keep_alive='10m')
+            response=await client.chat(model=MODEL,messages=messages,stream=False,think=thinking,
+                format=schema,
+                options={'temperature':0,'seed':42,'num_ctx':8192,'num_predict':1800 if thinking else 700},keep_alive='10m')
             await self.pin(client)
             if response.model!=MODEL or not response.done or response.done_reason!='stop':
                 raise ContractError('INVALID_MODEL_OUTPUT')
-            if final:
-                if response.message.tool_calls:raise ContractError('INVALID_MODEL_OUTPUT')
-                decision=FinalAnswer(response.message.content)
-                self.validate_final(run,decision)  # Fallar antes de que el core publique texto sin validar.
-                return decision
             if response.message.tool_calls:raise ContractError('INVALID_MODEL_OUTPUT')
-            return self.parse_call(run,response.message.content,messages)
+            return response.message.content
         except (ResponseError,httpx.HTTPError,ConnectionError):
             raise ContractError('LLM_UNAVAILABLE') from None
         finally:

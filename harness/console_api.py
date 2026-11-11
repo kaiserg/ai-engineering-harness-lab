@@ -10,7 +10,7 @@ from .rag_api import RAG_LIMITS
 from .llm_reader import PROFILE as READER_PROFILE,LIMITS as READER_LIMITS,MODEL,MODEL_DIGEST
 from .telemetry import carrier
 from .chat import PROFILE as CHAT_PROFILE
-from .profiles import CI_CHAT_PROFILES, REAL_CI_PREFIXES
+from .profiles import AGENTIC_CHAT_PROFILE, CI_CHAT_PROFILES, REAL_CI_PREFIXES
 
 
 def principal(request,*,read=False):
@@ -36,7 +36,7 @@ def install_routes(app,scenarios):
             saved=row.pop('previous_traceparent')
             parent=carrier(saved) if saved else None
             row['trace_id']=parent.split('-')[1] if parent else None
-            row['kind']='chat' if row['profile'].startswith(REAL_CI_PREFIXES) or row['profile'] in CI_CHAT_PROFILES or row['profile']==CHAT_PROFILE or row['profile'].startswith(('ollama-qwen3-4b-jira-demo-chat-v1','ollama-qwen3-4b-jira-cloud-chat-v1:','ollama-qwen3-4b-github-demo-chat-v1','ollama-qwen3-4b-github-public-chat-v1')) else 'reader' if row['profile']==READER_PROFILE else 'rag' if row['profile']==PROFILE else 'ci'
+            row['kind']='chat' if row['profile'] == AGENTIC_CHAT_PROFILE or row['profile'].startswith(REAL_CI_PREFIXES) or row['profile'] in CI_CHAT_PROFILES or row['profile']==CHAT_PROFILE or row['profile'].startswith(('ollama-qwen3-4b-jira-demo-chat-v1','ollama-qwen3-4b-jira-cloud-chat-v1:','ollama-qwen3-4b-github-demo-chat-v1','ollama-qwen3-4b-github-public-chat-v1')) else 'reader' if row['profile']==READER_PROFILE else 'rag' if row['profile']==PROFILE else 'ci'
         return {'runs':rows}
 
     @app.get('/api/console/config')

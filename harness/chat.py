@@ -10,7 +10,7 @@ from .core import authorize_run
 from .llm_reader import OllamaReader,LIMITS
 from .rag_agent import KnowledgePolicy
 from .telemetry import carrier
-from .profiles import CI_CHAT_MODES, CI_CHAT_PROFILES, LIVE_CI_PREFIX, JIRA_CI_PREFIX, REAL_CI_PREFIXES
+from .profiles import AGENTIC_CHAT_PROFILE, CI_CHAT_MODES, CI_CHAT_PROFILES, LIVE_CI_PREFIX, JIRA_CI_PREFIX, REAL_CI_PREFIXES
 
 PROFILE='ollama-qwen3-4b-document-chat-v1'
 MAX_TURNS=20
@@ -120,7 +120,10 @@ class Chats:
             profile=conversation['execution_profile']
             limits=LIMITS
             live_ci = profile.startswith(REAL_CI_PREFIXES)
-            if profile.startswith(JIRA_CI_PREFIX):
+            if profile==AGENTIC_CHAT_PROFILE:
+                from .agentic_rag import LIMITS as AGENTIC_LIMITS
+                limits=AGENTIC_LIMITS
+            elif profile.startswith(JIRA_CI_PREFIX):
                 from .ci_jira import LIMITS as JIRA_CI_LIMITS
                 limits=JIRA_CI_LIMITS
             elif live_ci:
@@ -179,6 +182,7 @@ def conversation_mode(profile):
     if profile in CI_CHAT_PROFILES:return CI_CHAT_PROFILES[profile]
     if profile==GH_DEMO:return 'github-demo'
     if profile==GH_PUBLIC:return 'github-public'
+    if profile==AGENTIC_CHAT_PROFILE:return 'documents-agentic'
     if profile==PROFILE:return 'documents'
     if profile==JIRA_PROFILE:return 'jira-demo'
     if profile.startswith(PREFIX):return 'jira-cloud'
@@ -200,6 +204,7 @@ def profile_for_mode(mode,identity=None):
     if mode in CI_CHAT_MODES:return CI_CHAT_MODES[mode]
     if mode=='github-demo':return GH_DEMO
     if mode=='github-public':return GH_PUBLIC
+    if mode=='documents-agentic':return AGENTIC_CHAT_PROFILE
     if mode=='documents':return PROFILE
     if mode=='jira-demo':return JIRA_PROFILE
     if mode=='jira-cloud':return PREFIX+current()
@@ -219,5 +224,8 @@ def policy_for(knowledge,profile):
     if profile in CI_CHAT_PROFILES:
         from .ci_chat import CIChatPolicy
         return CIChatPolicy(knowledge)
+    if profile==AGENTIC_CHAT_PROFILE:
+        from .agentic_rag import AgenticPolicy
+        return AgenticPolicy(knowledge)
     if profile in PROFILES:return GitHubPolicy(knowledge,profile)
     return JiraPolicy(knowledge,profile) if is_jira(profile) else ChatPolicy(knowledge)

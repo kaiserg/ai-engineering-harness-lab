@@ -5,7 +5,7 @@ from .contracts import ContractError, Identity
 from .core import Harness, Limits
 from .fakes import (AdversarialCILLM, CIScriptedLLM, DevOpsScriptedLLM, FakeJira,
                     ReadOnlyPolicy, ScriptedLLM)
-from .profiles import CI_CHAT_PROFILES, JIRA_CI_PREFIX, REAL_CI_PREFIXES, parse_ci_profile
+from .profiles import AGENTIC_CHAT_PROFILE, CI_CHAT_PROFILES, JIRA_CI_PREFIX, REAL_CI_PREFIXES, parse_ci_profile
 
 
 def demo_identity():
@@ -34,7 +34,7 @@ def compose(profile, identity, store, *, limits=Limits(), checkpoint_hook=None, 
     github_chat=profile in GH_PROFILES
     jira_chat=is_jira(profile)
     ci_chat=profile in CI_CHAT_PROFILES
-    reader_chat = profile in (READER_PROFILE, CHAT_PROFILE) or jira_chat or github_chat
+    reader_chat = profile in (READER_PROFILE, CHAT_PROFILE, AGENTIC_CHAT_PROFILE) or jira_chat or github_chat
     live_ci = profile.startswith(REAL_CI_PREFIXES)
     if (reader_chat or ci_chat or live_ci) and knowledge is None:
         from .postgres_store import PostgresRunStore
@@ -87,6 +87,12 @@ def compose(profile, identity, store, *, limits=Limits(), checkpoint_hook=None, 
             return Execution(Harness(JiraReader(policy,identity),policy,{'jira_get_issue':adapter},store,
                 limits=limits,checkpoint_hook=checkpoint_hook,execution_profile=profile,decision_finalizer=finish_jira),{'jira':adapter})
         adapter=KnowledgeTool(knowledge)
+        if profile==AGENTIC_CHAT_PROFILE:
+            from .agentic_rag import AgenticPolicy, AgenticReader, finish as finish_agentic
+            policy=AgenticPolicy(knowledge)
+            return Execution(Harness(AgenticReader(policy,identity),policy,{'knowledge_search':adapter},store,
+                limits=limits,checkpoint_hook=checkpoint_hook,execution_profile=profile,
+                decision_finalizer=finish_agentic),{'knowledge':adapter})
         policy=ChatPolicy(knowledge) if profile==CHAT_PROFILE else KnowledgePolicy(knowledge)
         model=ChatReader(policy,identity) if profile==CHAT_PROFILE else OllamaReader()
         return Execution(Harness(model,policy,{'knowledge_search':adapter},store,

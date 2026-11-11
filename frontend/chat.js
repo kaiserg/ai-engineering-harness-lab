@@ -15,7 +15,7 @@ function notice(value){$('chat-notice').textContent=value;}
 function render(data){
   lastMode=data.mode;
   const scenario=ciScenarios[data.mode];
-  $('chat-heading').textContent=scenario?'Investigación de CI · '+scenario:data.mode==='github-public'?'Chat con PRs públicos de GitHub':data.mode==='github-demo'?'Chat con GitHub de demostración':data.mode==='jira-cloud'?'Chat con Jira Cloud':data.mode==='jira-demo'?'Chat con Jira de demostración':'Chat con documentos';
+  $('chat-heading').textContent=scenario?'Investigación de CI · '+scenario:data.mode==='github-public'?'Chat con PRs públicos de GitHub':data.mode==='github-demo'?'Chat con GitHub de demostración':data.mode==='jira-cloud'?'Chat con Jira Cloud':data.mode==='jira-demo'?'Chat con Jira de demostración':data.mode==='documents-agentic'?'Chat con documentos · RAG agéntico':'Chat con documentos';
   const next=JSON.stringify(data);if(stamp===next)return;stamp=next;
   const root=$('chat-messages');root.replaceChildren();
   if(!data.turns.length)root.append(text('p',data.mode==='ci-jira'?'Indicá la clave del ticket y el número del build. Ejemplo: ¿Pasó el build 1 de PROY-123?':data.mode==='ci-live'?'Ingresá el PR y el build configurados, por ejemplo octocat/hello-world#1 build 1.':scenario?'Probá: ¿El build de DEV-123 pasó para el commit del PR?':'Escribí tu primera pregunta.','hint'));
@@ -24,7 +24,7 @@ function render(data){
     if(turn.unavailable){box.append(text('p','Contenido no disponible: ya no hay acceso a la evidencia de este turno o su contexto.','warning-note'));root.append(box);continue;}
     box.append(text('p','Vos · '+turn.read_request.query,'chat-question'));
     box.append(text('p',turn.answer?(scenario?'Informe de CI · ':'Qwen3 · ')+turn.answer:turn.status==='FAILED'?'No se publicó una respuesta. Resultado: '+turn.outcome_code:'El harness está procesando este mensaje.','chat-answer'));
-    box.append(text('p','Turno '+turn.ordinal+' · '+turn.status+(scenario?' · Decisiones ':' · Modelo ')+turn.model_calls+'/'+turn.limits_snapshot.model_calls+' · Tools '+turn.tool_calls+'/'+turn.limits_snapshot.tool_calls+' · '+Number(turn.active_seconds).toFixed(2)+' s · Run '+turn.run_id,'chat-meta'));
+    box.append(text('p','Turno '+turn.ordinal+' · '+turn.status+(scenario?' · Decisiones ':' · Modelo ')+turn.model_calls+'/'+turn.limits_snapshot.model_calls+(data.mode==='documents-agentic'?' · Búsquedas '+turn.results.filter(result=>result.tool_name==='knowledge_search').length+'/2':'')+' · Tools '+turn.tool_calls+'/'+turn.limits_snapshot.tool_calls+' · '+Number(turn.active_seconds).toFixed(2)+' s · Run '+turn.run_id,'chat-meta'));
     const job=turn.job;
     if(job&&(job.status==='PAUSED'||job.status==='RUNNING'&&!job.lease_active)){
       const recover=text('button','Recuperar este mensaje');recover.type='button';recover.disabled=busy;
@@ -51,7 +51,7 @@ export async function refreshChat(force=false){
     if(!selected&&result.conversations.length)selected=result.conversations[0].conversation_id;
     const root=$('chat-list');root.replaceChildren();
     for(const item of result.conversations){
-      const el=text('button',(item.conversation_id===selected?'● ':'')+new Date(item.created_at).toLocaleString('es')+' · '+(item.execution_profile?.startsWith('devops-ci-jira-chat-v1:')?'CI · Jira Cloud → GitHub → Jenkins':item.execution_profile?.startsWith('devops-ci-live-chat-v1:')?'CI · PR público y Jenkins local':item.execution_profile?.startsWith('devops-ci-chat-v1:')?'CI demo · '+ciScenarios['ci-'+item.execution_profile.split(':')[1]]:item.execution_profile?.includes('github-public')?'GitHub público':item.execution_profile?.includes('github-demo')?'GitHub demo':item.execution_profile?.includes('jira-cloud')?'Jira Cloud':item.execution_profile?.includes('jira-demo')?'Jira demo':'Documentos')+' · '+item.conversation_id.slice(0,8),'choice');el.type='button';el.disabled=busy;
+      const el=text('button',(item.conversation_id===selected?'● ':'')+new Date(item.created_at).toLocaleString('es')+' · '+(item.execution_profile?.startsWith('devops-ci-jira-chat-v1:')?'CI · Jira Cloud → GitHub → Jenkins':item.execution_profile?.startsWith('devops-ci-live-chat-v1:')?'CI · PR público y Jenkins local':item.execution_profile?.startsWith('devops-ci-chat-v1:')?'CI demo · '+ciScenarios['ci-'+item.execution_profile.split(':')[1]]:item.execution_profile?.includes('github-public')?'GitHub público':item.execution_profile?.includes('github-demo')?'GitHub demo':item.execution_profile?.includes('jira-cloud')?'Jira Cloud':item.execution_profile?.includes('jira-demo')?'Jira demo':item.execution_profile==='ollama-qwen3-4b-agentic-document-chat-v1'?'Documentos · RAG agéntico':'Documentos')+' · '+item.conversation_id.slice(0,8),'choice');el.type='button';el.disabled=busy;
       el.addEventListener('click',()=>{version++;selected=item.conversation_id;dirty=true;intent=null;stamp=null;$('chat-messages').replaceChildren();refreshChat().catch(error=>message(error.message==='JENKINS_CONFIGURATION'?'Configurá la conexión local de Jenkins según la guía.':error.message==='JIRA_CONFIGURATION'?'La conexión de Jira Cloud no está preparada. Consultá la guía del laboratorio.':error.message,true));});root.append(el);
     }
     if(selected&&['github-public','ci-live','ci-jira'].includes(lastMode)&&!chatPending&&!force&&!dirty)return;

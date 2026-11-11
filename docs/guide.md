@@ -4,9 +4,9 @@ Esta guía registra lo que ya funciona y explica cómo se relaciona con el dise�
 
 Para distinguir lo implementado del diseño objetivo, consultá la [matriz de cierre de etapa 2](status.md), con hitos, escenarios y pendientes.
 
-La guía se divide ahora en **55 capítulos**, uno por paso, dentro de `docs/guide/`. El contenido anterior se conserva en su orden de construcción; la [matriz de estado](status.md) distingue lo actual de los pasos históricos.
+La guía se divide ahora en **59 capítulos**, uno por paso, dentro de `docs/guide/`. El contenido anterior se conserva en su orden de construcción; la [matriz de estado](status.md) distingue lo actual de los pasos históricos.
 
-**Último paso:** [M7g · Del ticket de Jira Cloud al build de Jenkins](guide/58-m7g-jira-cloud-a-ci-desde-el-chat.md).
+**Último paso:** [RAG agéntico mínimo en el chat documental](guide/59-rag-agentico-minimo.md).
 
 ## Índice
 
@@ -243,3 +243,7 @@ Los encabezados conservan las anclas de la guía anterior para mantener sus enla
 ## M7g Jira Cloud, GitHub y Jenkins desde el chat
 
 [58. Leer el capítulo](guide/58-m7g-jira-cloud-a-ci-desde-el-chat.md).
+
+## RAG agéntico mínimo en el chat documental
+
+[59. Leer el capítulo](guide/59-rag-agentico-minimo.md).
