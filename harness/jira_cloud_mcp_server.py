@@ -7,7 +7,7 @@ from .mcp_server import build_read_server,main
 
 
 def build_server(identity,delay_seconds=0,include_pr=False):
-    return build_read_server(identity,'jira_get_issue',JIRA_INPUT_SCHEMA,issue_arguments,JiraCloud(),
+    return build_read_server(identity,'jira_get_issue',JIRA_INPUT_SCHEMA,issue_arguments,JiraCloud(include_pr),
         description='Lee un ticket autorizado de Jira Cloud. No admite cambios.')
 
 

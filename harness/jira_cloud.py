@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 from uuid import UUID,uuid5,NAMESPACE_URL
 from hashlib import sha256
 import httpx
-from .contracts import ContractError,ToolResult,ToolCall,issue_arguments
+from .contracts import ContractError,ToolResult,ToolCall,issue_arguments,pull_request_arguments
 from .fakes import ReadOnlyPolicy
 from .postgres_config import RUNTIME
 from .telemetry import span
@@ -90,21 +90,52 @@ def fetch(binding,identity,key,*,access_only=False):
     return data
 
 
-def plain_adf(node):
+def plain_adf(node, links=None):
     """Texto ADF acotado; no ejecuta enlaces, adjuntos, HTML ni menciones."""
     output=[];stack=[(node,0)];count=0
     while stack:
         value,depth=stack.pop();count+=1
         if count>2000 or depth>30:raise ContractError('INVALID_TOOL_OUTPUT')
         if not isinstance(value,dict):continue
-        if value.get('type')=='text' and type(value.get('text')) is str:output.append(value['text'])
+        if value.get('type')=='text' and type(value.get('text')) is str:
+            output.append(value['text'])
+            if links is not None:
+                marks=value.get('marks',[])
+                if not isinstance(marks,list):raise ContractError('INVALID_TOOL_OUTPUT')
+                anchors=[mark for mark in marks if isinstance(mark,dict) and mark.get('type')=='link']
+                if anchors:
+                    for anchor in anchors:
+                        attrs=anchor.get('attrs')
+                        if isinstance(attrs,dict):links.append(attrs.get('href'))
+                else:
+                    links.extend(re.findall(r'https://[^\s<>\[\]"\']+',value['text']))
+        if links is not None and value.get('type') in ('inlineCard','blockCard'):
+            attrs=value.get('attrs')
+            if isinstance(attrs,dict):links.append(attrs.get('url'))
         children=value.get('content',[])
         if not isinstance(children,list):raise ContractError('INVALID_TOOL_OUTPUT')
         stack.extend((child,depth+1) for child in reversed(children))
     return ' '.join(output)[:2400]
 
 
+def github_pull_links(links):
+    found = {}
+    for url in links:
+        if not isinstance(url,str) or len(url)>300:continue
+        match=re.fullmatch(r'https://github\.com/([^/]+/[^/]+)/pull/([1-9][0-9]{0,6})/?',url.rstrip('.,;!)'))
+        if not match:continue
+        repository,number=match[1].lower(),int(match[2])
+        try:pull=pull_request_arguments({'repository':repository,'pull_number':number})
+        except ContractError:continue
+        found[repository,number]=pull
+        if len(found)>16:raise ContractError('INVALID_TOOL_OUTPUT')
+    return list(found.values())
+
+
 class JiraCloud:
+    def __init__(self,include_pr=False):
+        self.include_pr=include_pr
+
     async def invoke(self,identity,call):
         import asyncio
         binding=identifier(os.environ['HARNESS_JIRA_BINDING'])
@@ -115,7 +146,9 @@ class JiraCloud:
             summary,status,updated=fields['summary'],fields['status']['name'],fields['updated']
             if any(type(x) is not str or not x for x in (summary,status,updated)):raise ValueError()
         except (KeyError,TypeError,ValueError):raise ContractError('INVALID_TOOL_OUTPUT') from None
+        links=[] if self.include_pr else None
         payload={'issue_key':key,'status':status[:100],'summary':summary[:200],
-                 'description':plain_adf(fields.get('description')),'updated':updated[:64]}
+                 'description':plain_adf(fields.get('description'),links),'updated':updated[:64]}
+        if self.include_pr:payload['pull_requests']=github_pull_links(links)
         source='jira-cloud:'+binding+':'+key+':'+sha256(json.dumps(payload,sort_keys=True).encode()).hexdigest()[:12]
         return ToolResult(call.call_id,payload,source,tool_name='jira_get_issue')

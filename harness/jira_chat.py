@@ -5,7 +5,7 @@ from hashlib import sha256
 from typing import Literal
 from pydantic import BaseModel,ConfigDict,ValidationError
 from .chat import ChatPolicy,ChatReader
-from .contracts import ContractError,ToolCall,FinalAnswer,issue_arguments,result_call
+from .contracts import ContractError,ToolCall,FinalAnswer,issue_arguments,result_call,pull_request_arguments
 from .llm_reader import ReadingAnswer
 from .jira_cloud import PREFIX,load,check_scope,fetch,identifier
 
@@ -20,7 +20,7 @@ def is_jira(profile):
     return False
 
 
-def validate_result(result,profile):
+def validate_result(result,profile,*,include_pr=False):
     if result.tool_name!='jira_get_issue' or result.schema_version!=1 or type(result.data) is not dict:
         raise ContractError('INVALID_TOOL_OUTPUT')
     data=result.data;issue_arguments({'issue_key':data.get('issue_key')})
@@ -30,7 +30,19 @@ def validate_result(result,profile):
             raise ContractError('INVALID_TOOL_OUTPUT')
     else:
         binding=identifier(profile[len(PREFIX):])
-        if set(data)!={'issue_key','status','summary','description','updated'}:raise ContractError('INVALID_TOOL_OUTPUT')
+        fields={'issue_key','status','summary','description','updated'}
+        if include_pr:fields.add('pull_requests')
+        if set(data)!=fields:raise ContractError('INVALID_TOOL_OUTPUT')
+        if include_pr:
+            pulls=data['pull_requests']
+            if type(pulls) is not list or len(pulls)>16:raise ContractError('INVALID_TOOL_OUTPUT')
+            seen=set()
+            for pull in pulls:
+                try:args=pull_request_arguments(pull)
+                except ContractError:raise ContractError('INVALID_TOOL_OUTPUT') from None
+                key=args['repository'],args['pull_number']
+                if key in seen:raise ContractError('INVALID_TOOL_OUTPUT')
+                seen.add(key)
         source='jira-cloud:'+binding+':'+data['issue_key']+':'+sha256(json.dumps(data,sort_keys=True).encode()).hexdigest()[:12]
         if result.source_id!=source:raise ContractError('INVALID_TOOL_OUTPUT')
         for field,limit in [('status',100),('summary',200),('description',2400),('updated',64)]:

@@ -6,7 +6,7 @@ Para distinguir lo implementado del diseño objetivo, consultá la [matriz de ci
 
 La guía se divide ahora en **55 capítulos**, uno por paso, dentro de `docs/guide/`. El contenido anterior se conserva en su orden de construcción; la [matriz de estado](status.md) distingue lo actual de los pasos históricos.
 
-**Último paso:** [M7f · Verificar un PR real con Jenkins local](guide/57-m7f-pr-real-y-jenkins-local.md).
+**Último paso:** [M7g · Del ticket de Jira Cloud al build de Jenkins](guide/58-m7g-jira-cloud-a-ci-desde-el-chat.md).
 
 ## Índice
 
@@ -239,3 +239,7 @@ Los encabezados conservan las anclas de la guía anterior para mantener sus enla
 ## M7f PR real y Jenkins local
 
 [57. Leer el capítulo](guide/57-m7f-pr-real-y-jenkins-local.md).
+
+## M7g Jira Cloud, GitHub y Jenkins desde el chat
+
+[58. Leer el capítulo](guide/58-m7g-jira-cloud-a-ci-desde-el-chat.md).

@@ -5,7 +5,7 @@ from .contracts import ContractError, Identity
 from .core import Harness, Limits
 from .fakes import (AdversarialCILLM, CIScriptedLLM, DevOpsScriptedLLM, FakeJira,
                     ReadOnlyPolicy, ScriptedLLM)
-from .profiles import CI_CHAT_PROFILES, LIVE_CI_PREFIX, parse_ci_profile
+from .profiles import CI_CHAT_PROFILES, JIRA_CI_PREFIX, REAL_CI_PREFIXES, parse_ci_profile
 
 
 def demo_identity():
@@ -35,7 +35,7 @@ def compose(profile, identity, store, *, limits=Limits(), checkpoint_hook=None, 
     jira_chat=is_jira(profile)
     ci_chat=profile in CI_CHAT_PROFILES
     reader_chat = profile in (READER_PROFILE, CHAT_PROFILE) or jira_chat or github_chat
-    live_ci = profile.startswith(LIVE_CI_PREFIX)
+    live_ci = profile.startswith(REAL_CI_PREFIXES)
     if (reader_chat or ci_chat or live_ci) and knowledge is None:
         from .postgres_store import PostgresRunStore
         from .user_identity import UserIdentityStore
@@ -47,13 +47,24 @@ def compose(profile, identity, store, *, limits=Limits(), checkpoint_hook=None, 
         from .adapters.mcp_github_public import MCPGitHubPublic
         from .adapters.mcp_jenkins import MCPJenkinsLive
         from .ci_live import LivePlanner, LivePolicy, finish, load
-        binding, token = load(profile)
+        jira_ci = profile.startswith(JIRA_CI_PREFIX)
+        if jira_ci:
+            from .adapters.mcp_jira_cloud import MCPJiraCloud
+            from .ci_jira import JiraCIPlanner, JiraCIPolicy, finish as finish_jira_ci, load as load_jira_ci
+            jira_binding,binding,token=load_jira_ci(profile)
+            jira=MCPJiraCloud(identity,jira_binding,include_pr=True)
+            model, policy, finalizer = JiraCIPlanner(binding),JiraCIPolicy(knowledge,binding,jira_binding),finish_jira_ci
+        else:
+            binding, token = load(profile)
+            model, policy, finalizer = LivePlanner(binding),LivePolicy(knowledge,binding),finish
         github, jenkins = MCPGitHubPublic(identity), MCPJenkinsLive(identity,binding,token)
         tools = {'github_get_pull_request':github,'jenkins_get_build':jenkins}
-        return Execution(Harness(LivePlanner(binding),LivePolicy(knowledge,binding),tools,store,
+        adapters = {'github':github,'jenkins':jenkins}
+        if jira_ci:
+            tools['jira_get_issue']=adapters['jira']=jira
+        return Execution(Harness(model,policy,tools,store,
             limits=limits,checkpoint_hook=checkpoint_hook,execution_profile=profile,
-            finalizer=lambda run:finish(run,binding),partial_tools=('jenkins_get_build',)),
-            {'github':github,'jenkins':jenkins})
+            finalizer=lambda run:finalizer(run,binding),partial_tools=('jenkins_get_build',)),adapters)
     if reader_chat:
         if github_chat:
             if profile==GH_PUBLIC:

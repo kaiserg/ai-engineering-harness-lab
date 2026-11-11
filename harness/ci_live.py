@@ -85,9 +85,12 @@ class LivePolicy(CIChatPolicy):
     def access_batch(self):
         return self.github.access_batch()
 
+    def build_number(self, run):
+        return self.binding.number(run.read_request['query'])
+
     def authorize_context(self, run, identity):
         self.binding.authorize_identity(identity)
-        number = self.binding.number(run.read_request['query'])
+        number = self.build_number(run)
         calls = [result_call(result) for result in run.results]
         calls.extend(failure.call for failure in run.tool_failures)
         if run.pending_call:
@@ -130,6 +133,10 @@ def finish(run, binding):
     number = binding.number(run.read_request['query'])
     if number is None and not run.results and not run.tool_failures:
         return FinalAnswer(NEEDS_INPUT), {'status': 'NEEDS_BUILD', 'sources': []}
+    return finish_for_build(run, binding, number)
+
+
+def finish_for_build(run, binding, number):
     names = [result.tool_name for result in run.results]
     if number is None or names not in (['github_get_pull_request'], ['github_get_pull_request', 'jenkins_get_build']):
         raise ContractError('INCOMPLETE_EVIDENCE')

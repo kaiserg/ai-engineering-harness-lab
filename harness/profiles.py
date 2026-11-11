@@ -4,6 +4,8 @@ from .contracts import ContractError
 CI_PREFIXES = ('mcp-devops-ci-v1:', 'mcp-devops-ci-v2:', 'mcp-devops-ci-v3:', 'mcp-devops-ci-v4:')
 BUILD_SCENARIOS = ('matching', 'stale', 'failed', 'unavailable')
 LIVE_CI_PREFIX = 'devops-ci-live-chat-v1:'
+JIRA_CI_PREFIX = 'devops-ci-jira-chat-v1:'
+REAL_CI_PREFIXES = (LIVE_CI_PREFIX, JIRA_CI_PREFIX)
 CI_CHAT_MODES = {f'ci-{scenario}': f'devops-ci-chat-v1:{scenario}' for scenario in BUILD_SCENARIOS}
 CI_CHAT_PROFILES = {profile: mode for mode, profile in CI_CHAT_MODES.items()}
 CONTENT_SCENARIOS = ('benign', 'injection')

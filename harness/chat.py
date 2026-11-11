@@ -10,7 +10,7 @@ from .core import authorize_run
 from .llm_reader import OllamaReader,LIMITS
 from .rag_agent import KnowledgePolicy
 from .telemetry import carrier
-from .profiles import CI_CHAT_MODES, CI_CHAT_PROFILES, LIVE_CI_PREFIX
+from .profiles import CI_CHAT_MODES, CI_CHAT_PROFILES, LIVE_CI_PREFIX, JIRA_CI_PREFIX, REAL_CI_PREFIXES
 
 PROFILE='ollama-qwen3-4b-document-chat-v1'
 MAX_TURNS=20
@@ -119,8 +119,11 @@ class Chats:
                 raise ContractError('RUN_BUSY')
             profile=conversation['execution_profile']
             limits=LIMITS
-            live_ci = profile.startswith(LIVE_CI_PREFIX)
-            if live_ci:
+            live_ci = profile.startswith(REAL_CI_PREFIXES)
+            if profile.startswith(JIRA_CI_PREFIX):
+                from .ci_jira import LIMITS as JIRA_CI_LIMITS
+                limits=JIRA_CI_LIMITS
+            elif live_ci:
                 from .ci_live import LIMITS as LIVE_LIMITS
                 limits=LIVE_LIMITS
             elif profile in CI_CHAT_PROFILES:
@@ -164,13 +167,14 @@ class Chats:
                     if error.code!='EVIDENCE_REVOKED':raise
                     messages.append({'ordinal':turn['ordinal'],'run_id':str(turn['run_id']),'unavailable':True})
         return {'conversation_id':str(identifier),'created_at':row['created_at'],'mode':conversation_mode(row['execution_profile']),'turns':messages,
-            'max_turns':MAX_TURNS,'history_turns':0 if row['execution_profile'] in CI_CHAT_PROFILES or row['execution_profile'].startswith(LIVE_CI_PREFIX) else HISTORY_TURNS}
+            'max_turns':MAX_TURNS,'history_turns':0 if row['execution_profile'] in CI_CHAT_PROFILES or row['execution_profile'].startswith(REAL_CI_PREFIXES) else HISTORY_TURNS}
 
 
 def conversation_mode(profile):
     from .jira_chat import PROFILE as JIRA_PROFILE
     from .jira_cloud import PREFIX
     from .github_chat import DEMO as GH_DEMO,PUBLIC as GH_PUBLIC
+    if profile.startswith(JIRA_CI_PREFIX):return 'ci-jira'
     if profile.startswith(LIVE_CI_PREFIX):return 'ci-live'
     if profile in CI_CHAT_PROFILES:return CI_CHAT_PROFILES[profile]
     if profile==GH_DEMO:return 'github-demo'
@@ -185,6 +189,9 @@ def profile_for_mode(mode,identity=None):
     from .jira_chat import PROFILE as JIRA_PROFILE
     from .jira_cloud import PREFIX,current
     from .github_chat import DEMO as GH_DEMO,PUBLIC as GH_PUBLIC
+    if mode=='ci-jira':
+        from .ci_jira import current_profile
+        return current_profile(identity)
     if mode=='ci-live':
         from .ci_live import load
         binding=load()[0]
@@ -202,6 +209,10 @@ def profile_for_mode(mode,identity=None):
 def policy_for(knowledge,profile):
     from .jira_chat import is_jira,JiraPolicy
     from .github_chat import PROFILES,GitHubPolicy
+    if profile.startswith(JIRA_CI_PREFIX):
+        from .ci_jira import JiraCIPolicy,load
+        jira,binding,_=load(profile)
+        return JiraCIPolicy(knowledge,binding,jira)
     if profile.startswith(LIVE_CI_PREFIX):
         from .ci_live import LivePolicy,load
         return LivePolicy(knowledge,load(profile)[0])
