@@ -1,6 +1,7 @@
 # 60. Arrancar y apagar un entorno Colima exclusivo
 
-[Índice](../guide.md) · [← Anterior](59-rag-agentico-minimo.md)
+[Índice](../guide.md) · [← Anterior](59-rag-agentico-minimo.md) · [Siguiente →](61-oidc-con-keycloak-primer-paso.md)
+
 
 El perfil `harness-lab` mantiene los contenedores y volúmenes del laboratorio en una máquina virtual propia. Su contexto Docker es `colima-harness-lab`. Los scripts del proyecto recuerdan ese contexto en `data/runtime/docker-context`. La opción `--activate=false` conserva el contexto Docker global que usás en otros proyectos.
 

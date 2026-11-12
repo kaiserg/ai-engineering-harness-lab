@@ -180,7 +180,7 @@ class PostgresRunService(RunService):
         return self.view(run)
 
 
-def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg_dsn=None, pg_schema=None, approvals_demo=False, approval_provider_path=None, write_worker=False, user_auth=False, user_directory=None):
+def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg_dsn=None, pg_schema=None, approvals_demo=False, approval_provider_path=None, write_worker=False, user_auth=False, user_directory=None, oidc=None):
     pg_schema=pg_schema or ('harness_users_lab' if user_auth else 'harness_lab')
     if not user_auth and pg_schema=='harness_users_lab':
         raise ValueError('El schema reservado de usuarios requiere --user-auth.')
@@ -204,6 +204,9 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
                 if user_auth:
                     from .user_identity import UserIdentityStore
                     app.state.user_directory=user_directory or UserIdentityStore(PostgresRunStore(pg_dsn or local_dsn()))
+                    if oidc:
+                        from .oidc import OidcAuthenticator
+                        app.state.user_directory=OidcAuthenticator(app.state.user_directory,**oidc)
                     app.state.service=None
                     from .authenticated_proposals import AuthenticatedProposals
                     app.state.user_proposals=AuthenticatedProposals(store,app.state.user_directory,
@@ -347,14 +350,22 @@ def main():
     parser.add_argument('--db', type=Path, default=ROOT / 'data/runtime/harness.sqlite3')
     parser.add_argument('--approvals-demo',action='store_true',help='M4 local con dos identidades ficticias; solo loopback/PostgreSQL.')
     parser.add_argument('--user-auth',action='store_true',help='API de lecturas con credencial de usuario, loopback y schema separado.')
+    parser.add_argument('--oidc-issuer',help='Habilita tokens OIDC además de las credenciales locales; requiere --oidc-audience y --oidc-jwks-url.')
+    parser.add_argument('--oidc-audience')
+    parser.add_argument('--oidc-jwks-url')
     parser.add_argument('--write-worker',action='store_true',help='Encolar envíos M4 para un worker independiente.')
     args = parser.parse_args()
     if args.user_auth and (args.host!='127.0.0.1' or args.storage!='postgres' or args.approvals_demo):
         parser.error('--user-auth requiere PostgreSQL/loopback y no admite --approvals-demo.')
     if args.write_worker and not args.approvals_demo:parser.error('--write-worker requiere --approvals-demo')
+    oidc=None
+    if args.oidc_issuer or args.oidc_audience or args.oidc_jwks_url:
+        if not (args.user_auth and args.oidc_issuer and args.oidc_audience and args.oidc_jwks_url):
+            parser.error('OIDC requiere --user-auth, --oidc-issuer, --oidc-audience y --oidc-jwks-url.')
+        oidc={'issuer':args.oidc_issuer,'audience':args.oidc_audience,'jwks_url':args.oidc_jwks_url}
     if args.approvals_demo and (args.host != '127.0.0.1' or args.storage != 'postgres'):
         parser.error('El modo M4 demo requiere --storage postgres y bind local 127.0.0.1.')
-    uvicorn.run(create_app(args.db, storage=args.storage,approvals_demo=args.approvals_demo,write_worker=args.write_worker,user_auth=args.user_auth), host=args.host, port=args.port, workers=1, access_log=False)
+    uvicorn.run(create_app(args.db, storage=args.storage,approvals_demo=args.approvals_demo,write_worker=args.write_worker,user_auth=args.user_auth,oidc=oidc), host=args.host, port=args.port, workers=1, access_log=False)
 
 
 if __name__ == '__main__':
