@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Harness Lab · Consola</title><link rel="icon" href="/assets/favicon.svg"><link rel="stylesheet" href="/assets/console.css">
-<script type="module" src="/assets/console.js"></script></head>
+<script type="module" src="/assets/console.js"></script><script type="module" src="/assets/oidc.js"></script></head>
 <body>
 <aside class="sidebar"><a href="/console" class="brand"><span class="brand-mark">h<span>·</span></span><span>Harness Lab<small>ENGINEERING WORKSPACE</small></span></a>
 <div class="space-label">Consola autenticada <span class="version">M5e</span></div>
@@ -17,6 +17,7 @@
 <section class="console-intro"><p class="eyebrow">AGENT OPERATIONS / LAB 02</p><h1>Tu harness.<br>Un solo lugar.</h1><p>Evidencia, conocimiento y decisiones con un recorrido común.</p></section>
 <section class="panel" aria-labelledby="session-title"><div class="section-header"><h2 id="session-title">Tu sesión local</h2><span class="pill">Credencial en memoria</span></div>
 <p>Seleccioná el archivo emitido por el laboratorio. La sesión se comparte entre las secciones de esta página.</p>
+<button id="oidc-login" type="button" hidden>Entrar con Keycloak</button>
 <label for="credential">Archivo de credencial (.json)</label><input id="credential" type="file" accept=".json,application/json">
 <div class="session-line"><span id="identity">Sin sesión</span><button id="logout" type="button" hidden>Salir de esta pantalla</button></div></section>
 <p id="message" class="message" role="status" aria-live="polite">Seleccioná una credencial para comenzar.</p>

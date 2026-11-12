@@ -180,7 +180,7 @@ class PostgresRunService(RunService):
         return self.view(run)
 
 
-def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg_dsn=None, pg_schema=None, approvals_demo=False, approval_provider_path=None, write_worker=False, user_auth=False, user_directory=None, oidc=None):
+def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg_dsn=None, pg_schema=None, approvals_demo=False, approval_provider_path=None, write_worker=False, user_auth=False, user_directory=None, oidc=None, oidc_client=None):
     pg_schema=pg_schema or ('harness_users_lab' if user_auth else 'harness_lab')
     if not user_auth and pg_schema=='harness_users_lab':
         raise ValueError('El schema reservado de usuarios requiere --user-auth.')
@@ -233,6 +233,9 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
         if user_auth:return PostgresRunService(request.app.state.run_store,request.state.identity,composer)
         return request.app.state.service
 
+    from urllib.parse import urlsplit
+    oidc_origin='%s://%s'%urlsplit(oidc['issuer'])[:2] if oidc else None
+
     @app.middleware('http')
     async def browser_boundary(request, call_next):
         if user_auth and request.url.path.startswith('/api/'):
@@ -254,7 +257,8 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
                     or request.headers.get('sec-fetch-site') == 'cross-site'):
                 return JSONResponse({'error': 'REQUEST_REJECTED'}, status_code=403)
         response = await call_next(request)
-        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+        connect = "'self'" + (' ' + oidc_origin if oidc_origin else '')
+        response.headers['Content-Security-Policy'] = f"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src {connect}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['Referrer-Policy'] = 'no-referrer'
         response.headers['Cache-Control'] = 'no-store'
@@ -318,6 +322,14 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
         from .console_api import install_routes as console_routes
         console_routes(app,SCENARIOS)
 
+        @app.get('/oidc-config')
+        async def oidc_config():
+            # Datos públicos para que el navegador inicie el login; sin secretos.
+            if not oidc or not oidc_client:return {'enabled':False}
+            base=oidc['issuer'].rstrip('/')+'/protocol/openid-connect'
+            return {'enabled':True,'authorization_endpoint':base+'/auth','token_endpoint':base+'/token',
+                'client_id':oidc_client['client_id'],'workspace':oidc_client['workspace']}
+
         @app.get('/console')
         async def console_page():return FileResponse(ROOT/'frontend/console.html')
 
@@ -353,19 +365,22 @@ def main():
     parser.add_argument('--oidc-issuer',help='Habilita tokens OIDC además de las credenciales locales; requiere --oidc-audience y --oidc-jwks-url.')
     parser.add_argument('--oidc-audience')
     parser.add_argument('--oidc-jwks-url')
+    parser.add_argument('--oidc-client-id',default='harness-console')
+    parser.add_argument('--oidc-workspace',default='workspace-alpha',help='Workspace que la consola envía con el token OIDC.')
     parser.add_argument('--write-worker',action='store_true',help='Encolar envíos M4 para un worker independiente.')
     args = parser.parse_args()
     if args.user_auth and (args.host!='127.0.0.1' or args.storage!='postgres' or args.approvals_demo):
         parser.error('--user-auth requiere PostgreSQL/loopback y no admite --approvals-demo.')
     if args.write_worker and not args.approvals_demo:parser.error('--write-worker requiere --approvals-demo')
-    oidc=None
+    oidc=oidc_client=None
     if args.oidc_issuer or args.oidc_audience or args.oidc_jwks_url:
         if not (args.user_auth and args.oidc_issuer and args.oidc_audience and args.oidc_jwks_url):
             parser.error('OIDC requiere --user-auth, --oidc-issuer, --oidc-audience y --oidc-jwks-url.')
         oidc={'issuer':args.oidc_issuer,'audience':args.oidc_audience,'jwks_url':args.oidc_jwks_url}
+        oidc_client={'client_id':args.oidc_client_id,'workspace':args.oidc_workspace}
     if args.approvals_demo and (args.host != '127.0.0.1' or args.storage != 'postgres'):
         parser.error('El modo M4 demo requiere --storage postgres y bind local 127.0.0.1.')
-    uvicorn.run(create_app(args.db, storage=args.storage,approvals_demo=args.approvals_demo,write_worker=args.write_worker,user_auth=args.user_auth,oidc=oidc), host=args.host, port=args.port, workers=1, access_log=False)
+    uvicorn.run(create_app(args.db, storage=args.storage,approvals_demo=args.approvals_demo,write_worker=args.write_worker,user_auth=args.user_auth,oidc=oidc,oidc_client=oidc_client), host=args.host, port=args.port, workers=1, access_log=False)
 
 
 if __name__ == '__main__':

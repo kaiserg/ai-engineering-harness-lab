@@ -4,9 +4,9 @@ Esta guía registra lo que ya funciona y explica cómo se relaciona con el dise�
 
 Para distinguir lo implementado del diseño objetivo, consultá la [matriz de cierre de etapa 2](status.md), con hitos, escenarios y pendientes.
 
-La guía se divide ahora en **61 capítulos**, uno por paso, dentro de `docs/guide/`. El contenido anterior se conserva en su orden de construcción; la [matriz de estado](status.md) distingue lo actual de los pasos históricos.
+La guía se divide ahora en **62 capítulos**, uno por paso, dentro de `docs/guide/`. El contenido anterior se conserva en su orden de construcción; la [matriz de estado](status.md) distingue lo actual de los pasos históricos.
 
-**Último paso:** [Login con OIDC y Keycloak · primer paso](guide/61-oidc-con-keycloak-primer-paso.md).
+**Último paso:** [Login con OIDC y Keycloak · botón en la consola](guide/62-oidc-con-keycloak-login-en-la-consola.md).
 
 ## Índice
 
@@ -255,3 +255,7 @@ Los encabezados conservan las anclas de la guía anterior para mantener sus enla
 ## Login con OIDC y Keycloak
 
 [61. La API acepta tokens de Keycloak](guide/61-oidc-con-keycloak-primer-paso.md).
+
+## Login en la consola con Keycloak
+
+[62. Entrar con Keycloak desde el navegador](guide/62-oidc-con-keycloak-login-en-la-consola.md).

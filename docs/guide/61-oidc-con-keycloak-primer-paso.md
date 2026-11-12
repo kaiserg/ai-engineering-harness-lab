@@ -1,6 +1,6 @@
 # 61. Login con OIDC y Keycloak · primer paso: la API acepta tokens
 
-[Índice](../guide.md) · [← Anterior](60-entorno-colima-aislado.md)
+[Índice](../guide.md) · [← Anterior](60-entorno-colima-aislado.md) · [Siguiente →](62-oidc-con-keycloak-login-en-la-consola.md)
 
 Hasta ahora la consola pedía un archivo `hsu_...` emitido por `scripts/users.py`. Era un atajo de laboratorio: el servidor guarda el hash del secreto y comprueba la sesión en cada petición, pero quien tiene acceso al comando se emite cualquier sesión. Un sistema real delega la pregunta «¿quién eres?» a un proveedor de identidad. Este capítulo agrega esa vía con **OIDC** (OpenID Connect) y **Keycloak**, un servidor de identidad de código abierto. **Todavía no cambia la consola**: el login en el navegador es el paso siguiente. Aquí se demuestra que la API verifica tokens reales.
 
@@ -57,4 +57,4 @@ Pruebas: `uv run python -m unittest tests.test_oidc` (sin Keycloak: clave RSA lo
 - Keycloak corre en modo desarrollo con base H2 sin volumen: al recrear el contenedor se pierden usuarios (`rm data/runtime/keycloak-users.json` y repetir `setup`). Mantiene la sesión y el realm solo mientras el contenedor viva.
 - El cliente de prueba `harness-cli-test`, con *password grant*, se crea en tiempo de ejecución para las pruebas; no existe en el realm versionado.
 - No hay revocación inmediata de un JWT ni cierre de sesión global; las membresías sí se revisan en cada petición.
-- La consola sigue usando archivos `hsu_`. Falta el flujo *authorization code + PKCE* en el navegador, `connect-src` en la CSP para el intercambio del código y el envío de `x-harness-workspace` desde `knowledge.js`.
+- La consola de este capítulo sigue usando archivos `hsu_`; el login en el navegador se resuelve en el [capítulo 62](62-oidc-con-keycloak-login-en-la-consola.md).

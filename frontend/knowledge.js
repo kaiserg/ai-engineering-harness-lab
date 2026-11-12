@@ -1,11 +1,11 @@
 'use strict';
 const $ = id => document.getElementById(id);
-let token = null, identity = null, generation = 0, polling = false;
+let token = null, workspaceHint = null, identity = null, generation = 0, polling = false;
 let uploadIntent = null, enqueueKey = null, enqueueProfile = null;
 const labels = {PENDING:'Pendiente',RUNNING:'En proceso',DONE:'Lista',FAILED:'Fallida'};
 function message(text, error=false) { $('message').textContent=text; $('message').classList.toggle('error',error); }
 function clearSession() {
-  generation++; token=null; identity=null; uploadIntent=null; enqueueKey=null; enqueueProfile=null;
+  generation++; token=null; workspaceHint=null; identity=null; uploadIntent=null; enqueueKey=null; enqueueProfile=null;
   $('workspace').hidden=true; $('logout').hidden=true; $('identity').textContent='Sin sesión';
   for (const id of ['credential','document','query']) $(id).value='';
   for (const id of ['documents','jobs','results']) $(id).replaceChildren();
@@ -14,14 +14,14 @@ function clearSession() {
 async function api(path, body) {
   const version=generation;
   const response=await fetch('/api/'+path,{method:body===undefined?'GET':'POST',credentials:'omit',cache:'no-store',redirect:'error',
-    headers:{Authorization:'Bearer '+token,'X-Harness-Client':'local-ui',...(body===undefined?{}:{'Content-Type':'application/json'})},
+    headers:{Authorization:'Bearer '+token,'X-Harness-Client':'local-ui',...(workspaceHint?{'X-Harness-Workspace':workspaceHint}:{}),...(body===undefined?{}:{'Content-Type':'application/json'})},
     ...(body===undefined?{}:{body:JSON.stringify(body)})});
   if (version!==generation) throw new Error('La sesión cambió; repetí la acción.');
   const data=await response.json();
   if (version!==generation) throw new Error('La sesión cambió; repetí la acción.');
   if (!response.ok) {
     if (response.status===401) clearSession();
-    throw new Error(response.status===401?'La sesión venció o fue revocada. Seleccioná una credencial vigente.':data.error || 'No se pudo completar la operación.');
+    throw new Error(response.status===401?'La sesión venció o fue revocada. Entrá de nuevo o seleccioná una credencial vigente.':data.error || 'No se pudo completar la operación.');
   }
   return data;
 }
@@ -63,6 +63,16 @@ async function refresh() {
     if (version===generation) {documents(docs.documents);jobs(work.jobs);}
   } finally { polling=false; }
 }
+async function connect(bearer,workspace) {
+  const version=generation;
+  try {
+    token=bearer; workspaceHint=workspace||null; const me=await api('me'); identity=me.identity;
+    if(!identity.roles.some(role=>['reader','operator','approver'].includes(role)))throw new Error('Tu usuario no tiene permiso para usar la consola.');
+    const operator=identity.roles.includes('operator'); $('upload').disabled=!operator; $('enqueue').disabled=!operator;
+    $('identity').textContent=identity.actor_id+' · '+identity.workspace_id+' · '+identity.roles.join(', ');
+    $('workspace').hidden=false; $('logout').hidden=false; message('Sesión conectada. La API verifica tus permisos en cada petición.'); window.dispatchEvent(new Event('harness-session')); await refresh();
+  } catch(error) { if(version===generation)clearSession(); message(error instanceof SyntaxError?'El archivo de credencial no es válido.':error.message,true); }
+}
 $('credential').addEventListener('change',async event=>{
   const file=event.target.files[0];clearSession(); if(!file)return;
   const version=generation;
@@ -71,11 +81,7 @@ $('credential').addEventListener('change',async event=>{
     const credential=JSON.parse(await file.text());
     if(version!==generation)return;
     if(typeof credential.token!=='string' || !/^hsu_[A-Za-z0-9_-]{43}$/.test(credential.token))throw new Error('El archivo de credencial no es válido.');
-    token=credential.token; const me=await api('me'); identity=me.identity;
-    if(!identity.roles.some(role=>['reader','operator','approver'].includes(role)))throw new Error('Tu usuario no tiene permiso para usar la consola.');
-    const operator=identity.roles.includes('operator'); $('upload').disabled=!operator; $('enqueue').disabled=!operator;
-    $('identity').textContent=identity.actor_id+' · '+identity.workspace_id+' · '+identity.roles.join(', ');
-    $('workspace').hidden=false; $('logout').hidden=false; message('Sesión conectada. La API verifica tus permisos en cada petición.'); window.dispatchEvent(new Event('harness-session')); await refresh();
+    await connect(credential.token,null);
   } catch(error) { if(version===generation)clearSession(); message(error instanceof SyntaxError?'El archivo de credencial no es válido.':error.message,true); }
 });
 $('logout').addEventListener('click',()=>{clearSession();message('Credencial eliminada de esta pantalla. Para revocarla, usá el comando del laboratorio.');});
@@ -117,3 +123,4 @@ window.addEventListener('pagehide',clearSession);
 export {api,text,row,refresh,message};
 export function getIdentity(){return identity;}
 export function disconnect(){clearSession();}
+export function connectToken(bearer,workspace){clearSession();return connect(bearer,workspace);}
