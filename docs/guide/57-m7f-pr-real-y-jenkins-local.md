@@ -22,14 +22,15 @@ PostgreSQL conserva el turno, el trabajo y sus checkpoints. Con la pausa marcada
 
 ## 4. Repetir el ejercicio
 
-El Jenkins de prueba ya quedó configurado si estás en el entorno del ejercicio. En un entorno nuevo, usá un motor Docker activo. Si usás un contexto distinto del predeterminado, agregá `--context NOMBRE` a los comandos de Docker.
+El Jenkins de prueba ya quedó configurado si estás en el entorno del ejercicio. En un entorno nuevo, usá un motor Docker activo. Los comandos usan el contexto exclusivo del laboratorio descrito en el [capítulo 60](60-entorno-colima-aislado.md).
 
 ```bash
-docker build -t harness-m7f-jenkins:local examples/jenkins-ci
-docker create --name harness-m7f-jenkins -p 127.0.0.1:18080:8080 \
+docker --context colima-harness-lab build -t harness-m7f-jenkins:local examples/jenkins-ci
+docker --context colima-harness-lab create --name harness-m7f-jenkins -p 127.0.0.1:18080:8080 \
+  --mount type=volume,src=harness-m7f-jenkins-data,dst=/var/jenkins_home \
   -e JAVA_OPTS=-Djenkins.install.runSetupWizard=false harness-m7f-jenkins:local
-docker cp examples/jenkins-ci/fixture.groovy harness-m7f-jenkins:/usr/share/jenkins/ref/init.groovy.d/fixture.groovy
-docker start harness-m7f-jenkins
+docker --context colima-harness-lab cp examples/jenkins-ci/fixture.groovy harness-m7f-jenkins:/usr/share/jenkins/ref/init.groovy.d/fixture.groovy
+docker --context colima-harness-lab start harness-m7f-jenkins
 ```
 
 Esperá que Jenkins complete la inicialización y ejecute sus dos builds. Prepará PostgreSQL con el procedimiento habitual y compilá el MCP de Go. Con la identidad de demostración ya inicializada, agregá el permiso local de GitHub y configurá Jenkins por un pipe que entrega el token directamente al configurador.
@@ -38,7 +39,7 @@ Esperá que Jenkins complete la inicialización y ejecute sus dos builds. Prepar
 uv run python scripts/postgres.py up
 uv run python scripts/build_jenkins.py --test
 uv run python scripts/github_public.py allow --repository octocat/hello-world
-docker exec harness-m7f-jenkins cat /var/jenkins_home/harness-reader-token \
+docker --context colima-harness-lab exec harness-m7f-jenkins cat /var/jenkins_home/harness-reader-token \
   | uv run python scripts/jenkins_ci.py --token-stdin
 ```
 
@@ -55,4 +56,4 @@ En [Chat](http://127.0.0.1:8005/console#chat), elegí **Investigación de CI · 
 2. Marcá **Pausar después de la lectura** y enviá `octocat/hello-world#1 build 2`. Recuperá el mismo mensaje. El informe debe mostrar que el segundo build pasó para otro commit.
 3. Para repetir la prueba automatizada con un esquema temporal de PostgreSQL, ejecutá `HARNESS_TEST_LIVE_CI=1 uv run python -m unittest integration_tests.test_ci_live`. La prueba también consulta un puerto local sin Jenkins y comprueba que CI queda sin confirmar.
 
-Podés detener el controlador del ejercicio con `docker stop harness-m7f-jenkins` y arrancarlo nuevamente con `docker start harness-m7f-jenkins`. Conserva el job, su historial y su cuenta de lectura.
+Podés detener el controlador del ejercicio con `docker --context colima-harness-lab stop harness-m7f-jenkins` y arrancarlo nuevamente con `docker --context colima-harness-lab start harness-m7f-jenkins`. Conserva el job, su historial y su cuenta de lectura.

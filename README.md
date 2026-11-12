@@ -531,3 +531,6 @@ uv run python scripts/evaluate_retrieval.py
 En Conocimiento elegí el perfil semántico y admití un job. Modelo/digest/dimensión/receta quedan fijados en su configuración; el worker conserva recuperación, permisos y activación atómica. La búsqueda usa la configuración del índice activo. El baseline léxico sigue disponible. El proveedor verifica el manifest conocido y rechaza otro digest; no descarga modelos ni usa API keys.
 
 La evaluación aislada usa ocho documentos y doce consultas: top-1 local 50 % léxico frente a 100 % semántico, con p50 de unos 33/145 ms. Es un fixture pequeño, sin evaluación de generación ni de abstención. Reporte ignorado en runtime; código y dataset versionados. Preparación, pin y límites en [guía 50](docs/guide/50-m5f-embeddings-semanticos-y-evaluaciones.md).
+
+
+Para usar un perfil Colima exclusivo y apagar sus recursos al terminar, seguí la [guía de arranque y apagado](docs/guide/60-entorno-colima-aislado.md).

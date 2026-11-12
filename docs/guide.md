@@ -4,9 +4,9 @@ Esta guía registra lo que ya funciona y explica cómo se relaciona con el dise�
 
 Para distinguir lo implementado del diseño objetivo, consultá la [matriz de cierre de etapa 2](status.md), con hitos, escenarios y pendientes.
 
-La guía se divide ahora en **59 capítulos**, uno por paso, dentro de `docs/guide/`. El contenido anterior se conserva en su orden de construcción; la [matriz de estado](status.md) distingue lo actual de los pasos históricos.
+La guía se divide ahora en **60 capítulos**, uno por paso, dentro de `docs/guide/`. El contenido anterior se conserva en su orden de construcción; la [matriz de estado](status.md) distingue lo actual de los pasos históricos.
 
-**Último paso:** [RAG agéntico mínimo en el chat documental](guide/59-rag-agentico-minimo.md).
+**Último paso:** [Entorno Colima exclusivo y apagado del laboratorio](guide/60-entorno-colima-aislado.md).
 
 ## Índice
 
@@ -247,3 +247,7 @@ Los encabezados conservan las anclas de la guía anterior para mantener sus enla
 ## RAG agéntico mínimo en el chat documental
 
 [59. Leer el capítulo](guide/59-rag-agentico-minimo.md).
+
+## Entorno Colima exclusivo
+
+[60. Arrancar y apagar el laboratorio](guide/60-entorno-colima-aislado.md).
