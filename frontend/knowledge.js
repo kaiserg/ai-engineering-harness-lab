@@ -71,7 +71,7 @@ async function connect(bearer,workspace) {
     const operator=identity.roles.includes('operator'); $('upload').disabled=!operator; $('enqueue').disabled=!operator;
     $('identity').textContent=identity.actor_id+' · '+identity.workspace_id+' · '+identity.roles.join(', ');
     $('workspace').hidden=false; $('logout').hidden=false; message('Sesión conectada. La API verifica tus permisos en cada petición.'); window.dispatchEvent(new Event('harness-session')); await refresh();
-  } catch(error) { if(version===generation)clearSession(); message(error instanceof SyntaxError?'El archivo de credencial no es válido.':error.message,true); }
+  } catch(error) { if(version===generation)clearSession(); message(error.message==='FORBIDDEN'?'Tu usuario no tiene acceso al workspace configurado.':error.message,true); }
 }
 $('credential').addEventListener('change',async event=>{
   const file=event.target.files[0];clearSession(); if(!file)return;

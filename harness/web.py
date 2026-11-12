@@ -234,7 +234,7 @@ def create_app(db=None, *, identity=None, composer=compose, storage='sqlite', pg
         return request.app.state.service
 
     from urllib.parse import urlsplit
-    oidc_origin='%s://%s'%urlsplit(oidc['issuer'])[:2] if oidc else None
+    oidc_origin='%s://%s'%urlsplit(oidc['issuer'])[:2] if oidc and oidc_client else None
 
     @app.middleware('http')
     async def browser_boundary(request, call_next):

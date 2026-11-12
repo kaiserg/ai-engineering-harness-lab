@@ -22,25 +22,28 @@ export async function start(config){
 
 export async function finish(config,params){
   const saved=recall();
-  history.replaceState(null,'',location.pathname+location.hash);
   if(!saved || !params.get('state') || params.get('state')!==saved.state)throw new Error('La respuesta de inicio de sesión no coincide con la solicitud.');
   if(params.get('error'))throw new Error('El proveedor de identidad rechazó el inicio de sesión.');
-  const response=await fetch(config.token_endpoint,{method:'POST',credentials:'omit',cache:'no-store',redirect:'error',
+  let response,data;
+  try {
+  response=await fetch(config.token_endpoint,{method:'POST',credentials:'omit',cache:'no-store',redirect:'error',
     headers:{'Content-Type':'application/x-www-form-urlencoded'},
     body:new URLSearchParams({grant_type:'authorization_code',client_id:config.client_id,code:params.get('code'),
       redirect_uri:location.origin+'/console',code_verifier:saved.verifier})});
-  const data=await response.json();
+  data=await response.json();
+  } catch { throw new Error('No se pudo contactar con Keycloak.'); }
   if(!response.ok || typeof data.access_token!=='string')throw new Error('No se pudo completar el inicio de sesión.');
   await connectToken(data.access_token,config.workspace);
 }
 
 async function init(){
+  const params=new URLSearchParams(location.search);
+  if(params.has('code')||params.has('error')||params.has('state'))history.replaceState(null,'',location.pathname+location.hash);
   let config;
   try{const response=await fetch('/oidc-config',{credentials:'omit',cache:'no-store'});config=await response.json();}catch{return;}
   if(!config.enabled)return;
   $('oidc-login').hidden=false;
   $('oidc-login').addEventListener('click',()=>start(config).catch(error=>message(error.message,true)));
-  const params=new URLSearchParams(location.search);
   if(params.has('code')||params.has('error'))finish(config,params).catch(error=>message(error.message,true));
 }
-if(typeof document!=='undefined' && document.getElementById('oidc-login'))init();
+if(typeof location!=='undefined' && document.getElementById('oidc-login'))init();

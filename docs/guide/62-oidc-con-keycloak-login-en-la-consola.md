@@ -41,6 +41,7 @@ Verificado por script (no en un navegador): autorización con PKCE, login, inter
 
 - **El workspace es único por servidor** (`--oidc-workspace`, por defecto `workspace-alpha`): el token no lo trae. La pertenencia en base sigue autorizándolo, pero la consola no permite elegir entre varios. Un selector alimentado por las membresías reales del actor sería el siguiente paso.
 - **El token dura cinco minutos y no hay renovación silenciosa.** Al vencer, la API responde 401, la consola limpia la sesión y hay que pulsar el botón otra vez; mientras la sesión de Keycloak siga viva, no pide contraseña de nuevo. Un *refresh token* con rotación sería la mejora natural.
+- **El botón solo funciona en `http://127.0.0.1:8005`.** El realm permite únicamente esa URI de redirección (`keycloak/harness-lab-realm.json`); en `localhost` u otro puerto Keycloak muestra «Invalid redirect_uri». Para otro puerto, ampliá `redirectUris` y `webOrigins` y recreá el contenedor.
 - **Salir de la consola no cierra la sesión de Keycloak.**
 - Keycloak sigue en modo desarrollo, sin volumen, y la comunicación es HTTP en loopback. En un despliegue real irían TLS, una base de datos persistente y un dominio propio.
 - La prueba en un navegador real queda como verificación manual; solo se automatizó la parte de protocolo y la criptografía del desafío.
