@@ -159,7 +159,6 @@ services:
       retries: 30
     restart: unless-stopped
   jaeger:
-    volumes: [jaeger_data:/tmp]
     image: cr.jaegertracing.io/jaegertracing/jaeger:2.23.0
     profiles: [app]
     ports: ["127.0.0.1:16686:16686", "127.0.0.1:4318:4318"]
@@ -183,7 +182,6 @@ services:
       retries: 30
     restart: unless-stopped
 volumes:
-  jaeger_data:
   chroma_data:
   alertmanager_data:
   prometheus_data:

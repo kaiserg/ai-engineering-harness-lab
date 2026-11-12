@@ -79,7 +79,7 @@ Prometheus conserva siete días en su volumen; `down` conserva sus datos y los d
 
 Abrí **[Jaeger](http://127.0.0.1:16686)** después de `stack.py up`. Creá un run nuevo en la consola, elegí servicio `harness-worker`, operación `worker.attempt` y filtrá por `run.id`. Cada intento tiene su propia traza, enlazada con el productor API y el intento anterior. Podés ver modelo, políticas, herramientas y requests TLS a emisor/Jira.
 
-La instrumentación exporta metadatos permitidos, sin prompts, resultados, identidades ni credenciales. Jaeger usa por defecto almacenamiento en memoria: reiniciarlo puede perder trazas (Compose le monta un volumen en `/tmp`, pero no está verificado que conserve datos); los checkpoints/evidencia siguen en PostgreSQL. Su caída no bloquea el run ni su recuperación. Fuera de Compose, tracing está desactivado por defecto. Ver la sección 27 de `docs/guide.md` para recorrer una pausa/recuperación y entender parent/links, privacidad y pruebas.
+La instrumentación exporta metadatos permitidos, sin prompts, resultados, identidades ni credenciales. Jaeger usa por defecto almacenamiento en memoria: reiniciarlo pierde trazas (verificado: montar un volumen en `/tmp` no las conserva); los checkpoints/evidencia siguen en PostgreSQL. Su caída no bloquea el run ni su recuperación. Fuera de Compose, tracing está desactivado por defecto. Ver la sección 27 de `docs/guide.md` para recorrer una pausa/recuperación y entender parent/links, privacidad y pruebas.
 
 ## Renovación programada y rotación en vivo
 

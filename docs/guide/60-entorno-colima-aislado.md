@@ -35,7 +35,7 @@ docker --context colima-harness-lab stop harness-m7f-jenkins
 colima stop --profile harness-lab
 ```
 
-Las bases, los índices, los dashboards y el historial de Jenkins se conservan en volúmenes. Jaeger tiene un volumen nombrado para conservar su directorio de datos al recrear el contenedor. La persistencia de las trazas también depende del backend de almacenamiento configurado en Jaeger.
+Las bases, los índices, los dashboards y el historial de Jenkins se conservan en volúmenes. Las trazas de Jaeger no se conservan: su configuración por defecto usa memoria y se pierden al reiniciar o recrear el contenedor (se comprobó que montar un volumen en `/tmp` no cambia eso). Los runs y la evidencia siguen en PostgreSQL.
 
 Si levantaste la API o workers directamente en terminales del host, detenelos con Ctrl+C en esas terminales. Ollama se administra desde su aplicación y puede seguir activo para otros usos.
 

@@ -118,7 +118,7 @@ Los fallos del tracer al iniciar/cerrar un span no sustituyen resultados ni exce
 
 La exportación es best effort. Un proceso que muere con `os._exit`, una cola llena o un collector caído pueden dejar spans ausentes/incompletos. La última traza enlazada puede no existir en Jaeger. Esto es compatible con recuperar el run desde PostgreSQL: tracing no sustituye el ledger ni una auditoría durable.
 
-Jaeger all-in-one guarda en memoria por defecto. `down` o reiniciar su contenedor puede perder sus trazas (Compose monta después un volumen en `/tmp`, pero no está verificado que conserve datos); PostgreSQL conserva runs/evidencia. El canal OTLP es interno de Compose y transporta la allowlist de metadatos. Un despliegue remoto requeriría controles propios para acceso/cifrado/retención de telemetría.
+Jaeger all-in-one guarda en memoria por defecto. `down` o reiniciar su contenedor pierde sus trazas (verificado con Jaeger 2.23: un volumen en `/tmp` no las conserva); PostgreSQL conserva runs/evidencia. El canal OTLP es interno de Compose y transporta la allowlist de metadatos. Un despliegue remoto requeriría controles propios para acceso/cifrado/retención de telemetría.
 
 ### Paso 8 explorar una ejecución en Jaeger
 
