@@ -21,9 +21,11 @@ class OidcAuthenticator:
         self.issuer = issuer
         self.audience = audience
         self.actor_claim = actor_claim
-        self.jwk_client = jwk_client or PyJWKClient(jwks_url, cache_keys=True, lifespan=300, timeout=5)
+        self.jwk_client = jwk_client or PyJWKClient(jwks_url, cache_keys=False, lifespan=300, timeout=5)  # sin caché por kid: una clave retirada deja de valer al refrescar el JWKS
 
     def __getattr__(self, attribute):
+        if attribute == 'directory':  # evita recursión en copy/pickle antes de __init__
+            raise AttributeError(attribute)
         return getattr(self.directory, attribute)
 
     def authenticate(self, authorization, requested_workspace=None):
@@ -37,6 +39,10 @@ class OidcAuthenticator:
         # El JWT no trae workspace: se exige explícito y la pertenencia en base lo autoriza.
         if requested_workspace is None:
             raise ContractError('FORBIDDEN')
+        try:
+            name(requested_workspace)
+        except ContractError as error:
+            raise ContractError('FORBIDDEN') from error
         actor = self._actor(token)
         return self.directory.resolve(actor, requested_workspace)
 

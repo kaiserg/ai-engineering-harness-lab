@@ -25,7 +25,7 @@ El workspace ya no sale de la sesión, porque el token no tiene uno. Con OIDC el
 
 ## 3. Qué se valida en cada token
 
-Algoritmo RS256 (se rechazan `none` y HS256), firma contra las claves públicas de Keycloak (JWKS, con caché), `iss` exacto, `aud` igual a `harness-api`, `exp`, `sub` y `typ=Bearer` (descarta tokens de identidad y de refresco). El actor sale de `preferred_username` y debe cumplir el mismo patrón que los nombres locales. Si Keycloak no responde, la API devuelve 503 `IDENTITY_UNAVAILABLE`, no 401.
+Algoritmo RS256 (se rechazan `none` y HS256), firma contra las claves públicas de Keycloak (JWKS con caché de cinco minutos; no se cachea por `kid`, así que una clave retirada deja de valer al refrescar), `iss` exacto, `aud` que contenga `harness-api`, `exp`, `sub` y `typ=Bearer` (descarta tokens de identidad y de refresco). El actor sale de `preferred_username` y debe cumplir el mismo patrón que los nombres locales. Si Keycloak no responde, la API devuelve 503 `IDENTITY_UNAVAILABLE`, no 401. Un `x-harness-workspace` mal formado da 403.
 
 Dos detalles de Keycloak que sorprenden: el token no trae `aud` para tu API salvo que un *mapper* lo agregue, y como el realm define sus propios *client scopes*, también hubo que agregar los mappers de `sub` y `preferred_username`. Se descubrieron inspeccionando un token real antes de validar nada.
 
@@ -55,6 +55,6 @@ Pruebas: `uv run python -m unittest tests.test_oidc` (sin Keycloak: clave RSA lo
 ## 5. Límites
 
 - Keycloak corre en modo desarrollo con base H2 sin volumen: al recrear el contenedor se pierden usuarios (`rm data/runtime/keycloak-users.json` y repetir `setup`). Mantiene la sesión y el realm solo mientras el contenedor viva.
-- El usuario de prueba `harness-cli-test` con *password grant* se crea en tiempo de ejecución para las pruebas; no existe en el realm versionado.
+- El cliente de prueba `harness-cli-test`, con *password grant*, se crea en tiempo de ejecución para las pruebas; no existe en el realm versionado.
 - No hay revocación inmediata de un JWT ni cierre de sesión global; las membresías sí se revisan en cada petición.
 - La consola sigue usando archivos `hsu_`. Falta el flujo *authorization code + PKCE* en el navegador, `connect-src` en la CSP para el intercambio del código y el envío de `x-harness-workspace` desde `knowledge.js`.

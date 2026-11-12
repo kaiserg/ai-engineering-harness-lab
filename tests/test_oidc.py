@@ -107,6 +107,20 @@ class OidcTests(unittest.TestCase):
         self.auth.directory.enabled.clear()
         self.rejects('FORBIDDEN', token())
 
+    def test_malformed_workspace_is_forbidden_not_unavailable(self):
+        for workspace in ('Workspace-Alpha', '', 'a b'):
+            self.rejects('FORBIDDEN', token(), workspace=workspace)
+
+    def test_withdrawn_signing_key_is_not_cached_by_kid(self):
+        from jwt import PyJWKClient
+        client = OidcAuthenticator(Directory(), issuer=ISSUER, audience=AUDIENCE, jwks_url='http://127.0.0.1:1/x').jwk_client
+        self.assertIsInstance(client, PyJWKClient)
+        self.assertFalse(hasattr(client.get_signing_key, 'cache_clear'))
+
+    def test_copy_does_not_recurse(self):
+        import copy
+        self.assertIsNot(copy.copy(self.auth), self.auth)
+
     def test_requires_explicit_issuer_and_audience(self):
         with self.assertRaises(ValueError):
             OidcAuthenticator(Directory(), issuer='', audience=AUDIENCE, jwk_client=Signing())
