@@ -1,6 +1,6 @@
 # M7d GitHub desde el chat por MCP
 
-[Índice](../guide.md) · [← Anterior](54-m7c-jira-desde-el-chat.md)
+[Índice](../guide.md) · [← Anterior](54-m7c-jira-desde-el-chat.md) · [Siguiente →](56-m7e-investigacion-ci-desde-el-chat.md)
 
 ## 1. Qué construimos
 

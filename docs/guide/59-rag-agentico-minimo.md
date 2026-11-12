@@ -1,5 +1,7 @@
 # 59. RAG agéntico mínimo en el chat documental
 
+[Índice](../guide.md) · [← Anterior](58-m7g-jira-cloud-a-ci-desde-el-chat.md) · [Siguiente →](60-entorno-colima-aislado.md)
+
 ## 1. Una búsqueda inicial y una decisión basada en evidencia
 
 En **Documentos · RAG agéntico**, Qwen3 local formula la primera consulta. Después de verla, elige responder, reformular o abstenerse. La primera búsqueda es obligatoria para que el modelo consulte el índice antes de concluir que falta evidencia. Este perfil se elige al crear la conversación y conserva el historial y los límites del chat persistido.

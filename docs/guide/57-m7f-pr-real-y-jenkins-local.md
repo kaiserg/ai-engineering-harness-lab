@@ -1,5 +1,7 @@
 # 57. M7f · Verificar un PR real con Jenkins local
 
+[Índice](../guide.md) · [← Anterior](56-m7e-investigacion-ci-desde-el-chat.md) · [Siguiente →](58-m7g-jira-cloud-a-ci-desde-el-chat.md)
+
 ## 1. Preparar dos builds comparables
 
 El ejercicio usa el PR público `octocat/hello-world#1` y un controlador Jenkins dedicado al laboratorio. El job `atlas-tests` trae por Git el head del PR en el build 1 y la rama base en el build 2. En ambos casos comprueba que el checkout contiene el README y archiva `harness-revision.json` con el repositorio, el número de PR y el SHA que devuelve `git rev-parse HEAD`. El job ejecuta una comprobación escrita por el laboratorio sobre esos archivos. El contenido del PR se trata como datos.

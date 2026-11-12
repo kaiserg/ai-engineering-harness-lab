@@ -1,5 +1,7 @@
 # 58. M7g · Del ticket de Jira Cloud al build de Jenkins
 
+[Índice](../guide.md) · [← Anterior](57-m7f-pr-real-y-jenkins-local.md) · [Siguiente →](59-rag-agentico-minimo.md)
+
 ## 1. Preparar la evidencia
 
 Usá un ticket en un proyecto Jira autorizado y agregá el enlace directo al PR en su **descripción**. Para el ejercicio M7f, el enlace es `https://github.com/octocat/Hello-World/pull/1`. Podés pegarlo como URL o insertarlo como hipervínculo o tarjeta de Jira. Conservá un solo PR distinto en la descripción. La deduplicación cuenta una URL repetida como un único PR.

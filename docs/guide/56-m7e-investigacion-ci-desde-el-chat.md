@@ -1,5 +1,7 @@
 # 56. M7e · Investigación de CI desde el chat
 
+[Índice](../guide.md) · [← Anterior](55-m7d-github-desde-el-chat.md) · [Siguiente →](57-m7f-pr-real-y-jenkins-local.md)
+
 ## 1. La pregunta que queremos responder
 
 «¿El build de DEV-123 pasó para el commit del PR?». Un build exitoso solo demuestra algo sobre la revisión que ejecutó. El informe tiene que mostrar el ticket, el PR, la revisión consultada y la revisión que probó Jenkins.

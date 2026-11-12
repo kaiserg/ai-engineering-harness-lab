@@ -2,7 +2,7 @@
 
 Este proyecto es un laboratorio educativo para construir y operar una aplicación de agentes de IA orientada a DevOps. Permite investigar un ticket, consultar su pull request y comparar la revisión del código con la de un build; también permite cargar documentos y buscar información con sus fuentes. Desde una consola web podés seguir las ejecuciones, revisar propuestas de acciones, aprobarlas con otro usuario e investigar fallos con trazas y métricas.
 
-El objetivo es aprender cómo construir el sistema que rodea al agente —el *harness*—: permisos, límites de tiempo y llamadas, estado persistido y recuperación tras interrupciones. Se espera que cada ejecución deje evidencia de lo que hizo y respete esos controles al retomarse. Actualmente Jira, GitHub y Jenkins usan datos simulados, y sus decisiones están guionadas; el lector documental y la búsqueda semántica utilizan modelos locales reales. Las acciones aprobadas también son simuladas.
+El objetivo es aprender cómo construir el sistema que rodea al agente —el *harness*—: permisos, límites de tiempo y llamadas, estado persistido y recuperación tras interrupciones. Se espera que cada ejecución deje evidencia de lo que hizo y respete esos controles al retomarse. Los recorridos de demostración usan Jira, GitHub y Jenkins simulados con decisiones guionadas; el chat, el lector documental y la búsqueda semántica usan modelos locales reales, y la lectura puede conectarse a Jira Cloud, a un PR público de GitHub y a un Jenkins local. Las acciones aprobadas siguen siendo simuladas.
 
 **Para probarlo con el entorno ya preparado**, ejecutá desde esta carpeta:
 
@@ -14,7 +14,7 @@ Abrí [la consola](http://127.0.0.1:8005/console) y seleccioná tu archivo de cr
 
 La consola necesita los servicios y workers del laboratorio en marcha. Si es tu primera vez, seguí la [guía paso a paso](docs/guide.md); para preparar la consola actual y sus workers, consultá el [capítulo 49](docs/guide/49-m5e-consola-autenticada-unificada.md), y para la búsqueda semántica, el [capítulo 50](docs/guide/50-m5f-embeddings-semanticos-y-evaluaciones.md). Más abajo están los comandos para levantar los servicios y emitir la credencial.
 
-El destino del laboratorio es una experiencia conversacional: plantear un problema a un LLM que utilice herramientas bajo estos controles. El lector documental y el chat con historial ya conectan un LLM real bajo los controles existentes. Jira ya tiene lectura desde el chat por MCP, con demostración y conexión Cloud; las trazas y la auditoría acompañan cada ejecución. GitHub ya tiene lectura de PRs desde el chat (demo/públicos); Jenkins y la planificación entre herramientas siguen pendientes. El [capítulo 51](docs/guide/51-m5g-preguntas-sin-respuesta.md) explica esta diferencia y los primeros casos de preguntas sin evidencia suficiente.
+El destino del laboratorio es una experiencia conversacional: plantear un problema a un LLM que utilice herramientas bajo estos controles. El lector documental y el chat con historial ya conectan un LLM real bajo los controles existentes. Jira ya tiene lectura desde el chat por MCP, con demostración y conexión Cloud; las trazas y la auditoría acompañan cada ejecución. GitHub ya tiene lectura de PRs desde el chat (demo/públicos) y la investigación de CI cruza Jira, GitHub y Jenkins (capítulos 56–58); la planificación entre herramientas es todavía un perfil fijado, no libre. El [capítulo 51](docs/guide/51-m5g-preguntas-sin-respuesta.md) explica esta diferencia y los primeros casos de preguntas sin evidencia suficiente.
 
 ## Alcance y estado del laboratorio
 
@@ -79,7 +79,7 @@ Prometheus conserva siete días en su volumen; `down` conserva sus datos y los d
 
 Abrí **[Jaeger](http://127.0.0.1:16686)** después de `stack.py up`. Creá un run nuevo en la consola, elegí servicio `harness-worker`, operación `worker.attempt` y filtrá por `run.id`. Cada intento tiene su propia traza, enlazada con el productor API y el intento anterior. Podés ver modelo, políticas, herramientas y requests TLS a emisor/Jira.
 
-La instrumentación exporta metadatos permitidos, sin prompts, resultados, identidades ni credenciales. Jaeger usa memoria: reiniciarlo pierde trazas; los checkpoints/evidencia siguen en PostgreSQL. Su caída no bloquea el run ni su recuperación. Fuera de Compose, tracing está desactivado por defecto. Ver la sección 27 de `docs/guide.md` para recorrer una pausa/recuperación y entender parent/links, privacidad y pruebas.
+La instrumentación exporta metadatos permitidos, sin prompts, resultados, identidades ni credenciales. Jaeger usa por defecto almacenamiento en memoria: reiniciarlo puede perder trazas (Compose le monta un volumen en `/tmp`, pero no está verificado que conserve datos); los checkpoints/evidencia siguen en PostgreSQL. Su caída no bloquea el run ni su recuperación. Fuera de Compose, tracing está desactivado por defecto. Ver la sección 27 de `docs/guide.md` para recorrer una pausa/recuperación y entender parent/links, privacidad y pruebas.
 
 ## Renovación programada y rotación en vivo
 
@@ -307,11 +307,15 @@ Las pruebas fuerzan caídas reales y cambios de propietario. El fencing protege 
 | `harness/mcp_server.py` | Servidor stdio compartido y validación de llamadas. |
 | `harness/jira_mcp_server.py`, `harness/github_mcp_server.py` | Servidores separados con backends ficticios y autorización. |
 | `harness/mcp_contract.py` | Schema cerrado de la primera herramienta. |
-| `tests/` | Pruebas locales, incluidas sesiones MCP reales, sin APIs o claves. |
+| `harness/chat.py`, `chat_api.py`, `llm_reader.py` | Chat persistido y lector con Qwen3 local (capítulos 52–53). |
+| `harness/jira_chat.py`, `github_chat.py`, `ci_chat.py`, `ci_live.py`, `ci_jira.py` | Lectura de Jira/GitHub e investigación de CI desde el chat (capítulos 54–58). |
+| `harness/knowledge.py`, `knowledge_queue.py`, `knowledge_worker.py`, `rag_agent.py`, `agentic_rag.py` | Conocimiento, ingestión durable, RAG como herramienta y RAG agéntico mínimo (capítulos 45–51, 59). |
+| `harness/proposals.py`, `operations.py`, `authenticated_proposals.py`, `authenticated_resolutions.py`, `user_write_worker.py` | Propuestas, operaciones, aprobaciones con identidad de usuario y escrituras simuladas (capítulos 31–43). |
+| `tests/`, `integration_tests/` | Pruebas locales e integraciones (PostgreSQL, Chroma, MCP reales), sin APIs de pago. |
 
 El recorrido puede consultar Jira, continuar con su PR en GitHub y comparar con un build Jenkins. SQLite conserva estado, contadores, resultados y tiempo. M2 agrega un transporte MCP real; el modelo y los datos siguen siendo ficticios. La API y el frontend funcionan con ejecución SQLite local o worker independiente sobre PostgreSQL. La operación empresarial entre servicios sigue pendiente. Los contratos de aprobación y operaciones externas inciertas siguen aislados del recorrido y no ejecutan escrituras.
 
-**Validación actual: 126 pruebas habituales, 36 de PostgreSQL real, 5 de Compose y las 2 pruebas Go previas.** Incluyen permisos por proyecto/repositorio en host y servidor, schemas, errores sanitizados, timeout, cancelación, recuperación entre herramientas y conservación del recorrido. M2 cubre S01–S04 con modelo/backends simulados; la plataforma objetivo todavía no está completa.
+**Validación de M2: 126 pruebas habituales, 36 de PostgreSQL real, 5 de Compose y las 2 pruebas Go de ese hito; las cifras vigentes están en la [matriz de cierre](docs/status.md).** Incluyen permisos por proyecto/repositorio en host y servidor, schemas, errores sanitizados, timeout, cancelación, recuperación entre herramientas y conservación del recorrido. M2 cubre S01–S04 con modelo/backends simulados; la plataforma objetivo todavía no está completa.
 
 ### Alertas e incidente local
 
@@ -328,7 +332,7 @@ El ejercicio detiene temporalmente solo el worker del laboratorio; requiere cola
 
 ### Alcance y próximos hitos
 
-La [matriz de cierre](docs/status.md) contrasta M0–M7 y S01–S12 con la implementación. M4a–M4h incluyen propuestas/aprobaciones, ledger, MCP, frontend, revisión manual, worker y observabilidad de escrituras sobre un proveedor ficticio. Las líneas base reúnen nueve evals de lectura y ocho de escritura. El próximo incremento aborda identidad de usuarios y autorización por workspace; RAG M5, conectores/modelo reales y endurecimiento M7 siguen pendientes.
+La [matriz de cierre](docs/status.md) contrasta M0–M7 y S01–S12 con la implementación. M4a–M4h incluyen propuestas/aprobaciones, ledger, MCP, frontend, revisión manual, worker y observabilidad de escrituras sobre un proveedor ficticio. Las líneas base reúnen nueve evals de lectura y ocho de escritura. La identidad de usuarios, RAG (M5) y los primeros conectores y LLM reales de lectura (M7a–M7g) ya están implementados; siguen pendientes OIDC, escrituras reales, carga y la revisión final de amenazas.
 
 ### Repetir sin bases anteriores y ejecutar evals
 
@@ -432,7 +436,7 @@ Los runs autenticados usan `harness_users_lab`, separado de los fixtures de las 
 
 La API 8005 permite proponer sobre un run propio, revisar con una credencial approver del mismo workspace, decidir sobre el hash/versión exactos y preparar una operación única. `decided_by` viene de la sesión; la autoaprobación se rechaza incluso con ambos roles. Antes de consumir, se revalidan los permisos del solicitante y del aprobador. Cliente: `scripts/user_proposals.py --session UUID inbox|propose|review|decide|prepare|operation`; ver sintaxis y ejemplos en la [guía, sección 41](docs/guide.md#m3d3-propuestas-y-aprobaciones-con-identidad-autenticada).
 
-El recorrido termina en CONSUMED/PREPARED, con cero jobs/envíos. El despacho autenticado permanece deshabilitado hasta conectar la autoridad de ejecución/recuperación del servicio; el M4 anterior en 8003 conserva su modo de desarrollo. Login web/OIDC sigue pendiente.
+El recorrido termina en CONSUMED/PREPARED, con cero jobs/envíos. En este punto el despacho autenticado estaba deshabilitado; M3d4–M3d5 lo conectaron después; el M4 anterior en 8003 conserva su modo de desarrollo. Login web/OIDC sigue pendiente.
 
 ### M3d4 envío autenticado por servicio y recuperación
 
@@ -455,7 +459,7 @@ uv run python scripts/user_proposals.py --session SESION_APROBADOR resolution UU
 uv run python scripts/user_proposals.py --session SESION_APROBADOR confirm-resolution UUID_DE_OPERACION --payload-hash HASH_REVISADO --version 0
 ```
 
-El cierre remoto impide un envío tardío; una búsqueda vacía no basta. Resolución CONFIRMED, ledger terminal y job DONE se guardan juntos, con otro fencing token y auditoría del revisor. Revisa permisos actuales sin exigir que siga habilitado el solicitante de una revisión ya preparada. No toma jobs PENDING/RUNNING ni reenvía. Ver [guía, sección 43](docs/guide.md#m3d5-resolución-manual-autenticada-de-unknown). Después del cierre/regresión autenticada, el próximo hito funcional es M5/RAG.
+El cierre remoto impide un envío tardío; una búsqueda vacía no basta. Resolución CONFIRMED, ledger terminal y job DONE se guardan juntos, con otro fencing token y auditoría del revisor. Revisa permisos actuales sin exigir que siga habilitado el solicitante de una revisión ya preparada. No toma jobs PENDING/RUNNING ni reenvía. Ver [guía, sección 43](docs/guide.md#m3d5-resolución-manual-autenticada-de-unknown). M5/RAG, descrito más abajo, vino después de este cierre.
 
 ### Cierre autenticado antes de M5
 
@@ -506,7 +510,7 @@ uv run python -m harness.knowledge_worker --actor reader-demo --workspace worksp
 
 Seleccioná el archivo privado de la sesión en la pantalla, cargá MD/TXT y poné la indexación en cola. La página muestra documentos, trabajos persistidos, intentos y citas; no ejecuta la ingestión. La credencial permanece solo en memoria del navegador. Carga HTTP idempotente, permisos/workspace actuales y recuperación del worker conservados. Guía [47](docs/guide/47-m5c-api-y-frontend-de-documentos-e-ingestion.md).
 
-La [guía principal](docs/guide.md) es ahora un índice de capítulos dentro de `docs/guide/`, con el recorrido histórico y navegación anterior/siguiente.
+La [guía principal](docs/guide.md) es ahora un índice de capítulos dentro de `docs/guide/`, con el recorrido histórico y un índice y enlaces de navegación entre capítulos.
 
 ## M5d · Recuperación documental como herramienta del core
 
